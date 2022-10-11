@@ -1,4 +1,4 @@
-# IVT490-interface-esp8266
+# (WIP) IVT490-interface-esp8266
 Interfacing software/hardware for the IVT490 heatpump tailored for a esp8266 device such as the Wemos D1 mini.
 
 The code serves as a "dumb" API over MQTT.
