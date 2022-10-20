@@ -80,14 +80,18 @@ namespace IVT490
         {
             this->adc.begin(CS_pin);
             this->channel = channel;
-            this->read();
         }
         float read()
         {
             float adc_value = this->adc.analogRead(this->channel);
             float max_value = this->adc.maxValue();
 
+            LOG_DEBUG("ADC value (channel", this->channel, "):", adc_value);
+            LOG_DEBUG("ADC max value:", max_value);
+
             float resistance = adc_value > 0.0f ? R_0 * ((max_value / adc_value) - 1) : std::numeric_limits<float>::max();
+
+            LOG_DEBUG("Resistance:", resistance, "ohm");
 
             return NTC_interpolate_temperature(resistance);
         }
