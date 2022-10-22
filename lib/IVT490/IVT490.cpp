@@ -7,33 +7,33 @@ namespace IVT490
 {
     static const int NTC_number_of_values = 27;
     // Ohm
-    float NTC_resistances[NTC_number_of_values] = {154300,
-                                                   111700,
-                                                   81700,
-                                                   60500,
-                                                   45100,
-                                                   33950,
-                                                   25800,
-                                                   19770,
-                                                   15280,
-                                                   11900,
-                                                   9330,
-                                                   7370,
-                                                   5870,
-                                                   4700,
-                                                   3490,
-                                                   3070,
-                                                   2510,
-                                                   2055,
-                                                   1696,
-                                                   1405,
-                                                   1170,
-                                                   980,
-                                                   824,
-                                                   696,
-                                                   590,
-                                                   503,
-                                                   430};
+    float NTC_resistances[NTC_number_of_values] = {-154300,
+                                                   -111700,
+                                                   -81700,
+                                                   -60500,
+                                                   -45100,
+                                                   -33950,
+                                                   -25800,
+                                                   -19770,
+                                                   -15280,
+                                                   -11900,
+                                                   -9330,
+                                                   -7370,
+                                                   -5870,
+                                                   -4700,
+                                                   -3490,
+                                                   -3070,
+                                                   -2510,
+                                                   -2055,
+                                                   -1696,
+                                                   -1405,
+                                                   -1170,
+                                                   -980,
+                                                   -824,
+                                                   -696,
+                                                   -590,
+                                                   -503,
+                                                   -430};
     // Degrees Celcuis
     float NTC_temperatures[NTC_number_of_values] = {-40,
                                                     -35,
@@ -67,12 +67,12 @@ namespace IVT490
 
     float NTC_interpolate_temperature(float resistance)
     {
-        return multiMap<float>(resistance, NTC_resistances, NTC_temperatures, NTC_number_of_values);
+        return multiMap<float>(-resistance, NTC_resistances, NTC_temperatures, NTC_number_of_values);
     }
 
     float NTC_interpolate_resistance(float temperature)
     {
-        return multiMap<float>(temperature, NTC_temperatures, NTC_resistances, NTC_number_of_values);
+        return -multiMap<float>(temperature, NTC_temperatures, NTC_resistances, NTC_number_of_values);
     }
 
     int parse_IVT490(String raw, IVT490State &parsed)

@@ -27,7 +27,7 @@ SoftwareSerial ivtSerial(IVT490_SERIAL_TX, IVT490_SERIAL_RX);
 IVT490::IVT490State vp_state;
 
 // Thermistor reader
-IVT490::IVT490ThermistorReader<4700> GT2_reader(IVT490_ADC_CS, 0);
+IVT490::IVT490ThermistorReader<IVT490_R0_RESISTANCE> GT2_reader(IVT490_ADC_CS, 0);
 SMA::Filter<float, 10> filter;
 
 // Thermistor emulator
