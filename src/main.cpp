@@ -9,6 +9,7 @@
 #include <DebugLog.h>
 
 #include "IVT490.h"
+#include "SMA.h"
 
 reactesp::ReactESP app;
 
@@ -27,6 +28,7 @@ IVT490::IVT490State vp_state;
 
 // Thermistor reader
 IVT490::IVT490ThermistorReader<4700> GT2_reader(IVT490_ADC_CS, 0);
+SMA::Filter<float, 10> filter;
 
 // Thermistor emulator
 IVT490::IVT490ThermistorEmulator<8, 100000> GT2_emulator(&vp_state.GT2_heatpump, IVT490_THERMISTOR_EMULATOR_CS);
@@ -160,8 +162,11 @@ void setup()
   app.onRepeat(1000, []()
                {
                  LOG_INFO("Reading ADCs...");
-                 vp_state.GT2_sensor = GT2_reader.read();
-                 LOG_DEBUG("    GT2_sensor: ", vp_state.GT2_sensor); });
+                 auto value = GT2_reader.read();
+                 LOG_DEBUG("    GT2_sensor: ", value);
+                 auto filtered_value = filter(value);
+                 LOG_DEBUG("    GT2_sensor (filtered): ", filtered_value);
+                 vp_state.GT2_sensor = filtered_value; });
 
   app.onRepeat(1000, []()
                {
