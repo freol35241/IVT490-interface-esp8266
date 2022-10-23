@@ -16,9 +16,19 @@ As such, it is possible to "fake" input to the IVT490 controller board such that
 
 The default behavior is however to emulate the same temperature as is being sensed by the resistive sensors, which essentially means to keep the heatpump working as per its own configuration.
 
+
 ## Hardware
 
-This repository contains wiring diagrams for how to connect all the hardware to a Wemos D1 mini. Other esp8266-based boards should be fine but most probably requires other pin numbers etc.
+BOM:
+
+- Wemos D1 mini (Other esp8266-based boards should probably be fine but will obviously require adjustments to the wiring)
+- MCP3208 (or a similar one with fewer channels, all wiring schematics are shown using this particular one and may have to be adjusted if exchanged)
+- MCP41100
+- 10kOhm resistor
+
+Schematic:
+![](circuit.svg)
+
 
 ## Software
 
