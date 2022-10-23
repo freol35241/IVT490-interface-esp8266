@@ -36,13 +36,16 @@ All pre-deployment configuration of the software in this repository is done usin
 
 ## Heatpump (IVT490)
 
-Enable serial debug output using the "Installation menu" on the heatpump. TODO: Further instructions necessary.
+1. Connect to the debug interface on the control board on the heatpump and enable debug output in the heatpump menu. Detailed instructions are available in [this](http://www.tsoft.se/wp/2015/03/08/overvakning-av-min-ivt-490-varmepump-med-raspberry-pi/) blog post.
+
+
+2. Intersect the GT2 sensor cabling and connect the [Hardware](#hardware) as a "man-in-the-middle".
 
 ## API
 
-All communication to and from the `agent` during runtime happens via MQTT.
+All communication during runtime happens via MQTT.
 
-It publishes data according to:
+The interface publishes data according to:
 
 * `{MQTT_BASE_TOPIC}/state`
 
@@ -54,7 +57,7 @@ It publishes data according to:
 
 States are published at 60 second intervals.
 
-It listens for control commands according to:
+The interface listens for control commands according to:
 
 * `{MQTT_BASE_TOPIC}/control/GT1_target`
 
