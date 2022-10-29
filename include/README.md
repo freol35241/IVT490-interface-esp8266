@@ -17,7 +17,6 @@ More specifically, this project requires a header file named `config.h` to be pl
 
 #define MQTT_BASE_TOPIC "BASE/TOPIC/FOR/PUBLISHING"
 
-#define IVT490_SERIAL_TX 10
 #define IVT490_SERIAL_RX 11
 #define IVT490_HEATING_CURVE_SLOPE 4.7
 #define IVT490_ADC_CS 15                // D8

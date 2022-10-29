@@ -1,4 +1,4 @@
-# (WIP) IVT490-interface-esp8266
+# IVT490-interface-esp8266
 Interfacing software/hardware for the IVT490 heatpump tailored for a esp8266 device such as the Wemos D1 mini.
 
 The code serves as a "dumb" API over MQTT.
@@ -10,11 +10,13 @@ In essence, a combination of software and hardware is used to:
 * Directly read a subset of the NTC resisitive sensors used by the IVT490 using ADCs
 * Emulate resistive sensors using digitally controlled potentiometers (DCPs)
 
-As such, it is possible to "fake" input to the IVT490 controller board such that it is possible to:
+As such, it is possible to emulate input to the IVT490 controller board. The default behavior is however to emulate the same temperature as is being sensed by the resistive sensors, which essentially means to keep the heatpump working as per its own configuration.
 
-* Directly control the target feed temperature to the heating system
+Currently, the software and hardware supports to emulate the following temperature sensors:
 
-The default behavior is however to emulate the same temperature as is being sensed by the resistive sensors, which essentially means to keep the heatpump working as per its own configuration.
+* GT2 (outdoor temperature sensor).
+
+  This allows for controlling the target feed temperature (GT1_target) of the heating system through knowledge of the heating curve used by the heatpump.
 
 
 ## Hardware
@@ -45,7 +47,7 @@ All pre-deployment configuration of the software in this repository is done usin
 
 All communication during runtime happens via MQTT.
 
-The interface publishes data according to:
+The interface publishes data at 10 second intervals according to:
 
 * `{MQTT_BASE_TOPIC}/state`
 
@@ -55,7 +57,6 @@ The interface publishes data according to:
 
   All parameters in the state are also published onto individual topics as floats/ints/bools.
 
-States are published at 60 second intervals.
 
 The interface listens for control commands according to:
 

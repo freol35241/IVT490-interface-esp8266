@@ -21,7 +21,7 @@ WiFiEventHandler wifiDisconnectHandler;
 Ticker wifiReconnectTimer;
 
 // IVT490 serial connection
-SoftwareSerial ivtSerial(IVT490_SERIAL_TX, IVT490_SERIAL_RX);
+SoftwareSerial ivtSerial(IVT490_SERIAL_RX);
 
 // Global states
 IVT490::IVT490State vp_state;
@@ -114,6 +114,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     LOG_INFO("  New GT2_target value: ", GT2_target);
 
     GT2_emulator.update_target_ptr(&GT2_target);
+    GT2_emulator.adjust();
   }
   else
   {
@@ -190,8 +191,10 @@ void setup()
                     LOG_INFO("Successfully parsed serial message from IVT490.");
 
                     LOG_INFO("Updating thermistor emulator");
-                    GT2_emulator.adjust();
+                    GT2_emulator.adjust(); });
 
+  app.onRepeat(10000, []
+               {
                     auto doc = IVT490::serialize_IVT490State(vp_state);
 
                     LOG_INFO("Publishing to MQTT broker...");
@@ -215,7 +218,7 @@ void setup()
                       LOG_DEBUG(pair.key().c_str(), pair.value().as<String>());
 
                       mqttClient.publish(
-                          (MQTT_BASE_TOPIC + String("/state") + pair.key().c_str()).c_str(),
+                          (MQTT_BASE_TOPIC + String("/state/") + pair.key().c_str()).c_str(),
                           0,
                           false,
                           pair.value().as<String>().c_str());
