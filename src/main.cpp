@@ -27,11 +27,11 @@ SoftwareSerial ivtSerial(IVT490_SERIAL_RX);
 IVT490::IVT490State vp_state;
 
 // Thermistor reader
-IVT490::IVT490ThermistorReader<IVT490_R0_RESISTANCE> GT2_reader(IVT490_ADC_CS, 0);
-SMA::Filter<float, 10> filter;
+IVT490::IVT490ThermistorReader<IVT490_ADC_R0> GT2_reader(IVT490_ADC_CS, 0);
+SMA::Filter<float, IVT490_ADC_FILTER_WINDOW_COUNT> filter;
 
 // Thermistor emulator
-IVT490::IVT490ThermistorEmulator<8, 100000> GT2_emulator(&vp_state.GT2_heatpump, IVT490_THERMISTOR_EMULATOR_CS);
+IVT490::IVT490ThermistorEmulator<IVT490_DIGPOT_RESOLUTION, IVT490_DIGIPOT_MAX_RESISTANCE> GT2_emulator(&vp_state.GT2_heatpump, IVT490_DIGIPOT_CS);
 unsigned long GT1_control_value_last_received_at = 0;
 
 void connectToWifi()
@@ -160,7 +160,7 @@ void setup()
   GT2_emulator.update_target_ptr(&vp_state.GT2_sensor);
 
   // Read ADCs continuously
-  app.onRepeat(1000, []()
+  app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
                {
                  LOG_INFO("Reading ADCs...");
                  auto value = GT2_reader.read();
@@ -171,7 +171,7 @@ void setup()
 
   app.onRepeat(1000, []()
                {
-                 if (millis() - GT1_control_value_last_received_at > IVT490_CONTROL_VALUES_VALIDITY)
+                 if (millis() - GT1_control_value_last_received_at > GENERAL_CONTROL_VALUES_VALIDITY)
                  {
                    GT2_emulator.update_target_ptr(&vp_state.GT2_sensor);
                  } });
@@ -180,7 +180,16 @@ void setup()
   app.onAvailable(ivtSerial, []()
                   {
                     auto raw = ivtSerial.readStringUntil('\n');
-                    LOG_INFO("Received serial data from IVT490: ", raw);
+                    LOG_INFO("Received serial data from IVT490:");
+                    LOG_DEBUG(raw);
+
+                    LOG_INFO("Publishing raw output to MQTT broker...");
+                    mqttClient.publish(
+                        (MQTT_BASE_TOPIC + String("/state/raw")).c_str(),
+                        0,
+                        false,
+                        raw.c_str());
+
 
                     if (parse_IVT490(raw, vp_state) < 0)
                     {
@@ -193,7 +202,7 @@ void setup()
                     LOG_INFO("Updating thermistor emulator");
                     GT2_emulator.adjust(); });
 
-  app.onRepeat(10000, []
+  app.onRepeat(GENERAL_STATE_PUBLISH_INTERVAL, []
                {
                     auto doc = IVT490::serialize_IVT490State(vp_state);
 
@@ -223,6 +232,8 @@ void setup()
                           false,
                           pair.value().as<String>().c_str());
                     } });
+
+  app.onDelay(24 * 3600 * 1000, ESP.restart);
 
   LOG_INFO("Setup complete, app started successfully...");
 }
