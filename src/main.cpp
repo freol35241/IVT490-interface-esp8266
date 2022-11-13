@@ -156,9 +156,6 @@ void setup()
   // Connect to wifi and subsequently to mqtt broker
   connectToWifi();
 
-  // Initialize emulator to follow sensor value
-  GT2_emulator.update_target_ptr(&vp_state.GT2_sensor);
-
   // Read ADCs continuously
   app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
                {
@@ -169,10 +166,13 @@ void setup()
                  LOG_DEBUG("    GT2_sensor (filtered): ", filtered_value);
                  vp_state.GT2_sensor = filtered_value; });
 
-  app.onRepeat(1000, []()
+  app.onRepeat(IVT490_DIGIPOT_RESET_PERIOD, []()
                {
-                 if (millis() - GT1_control_value_last_received_at > GENERAL_CONTROL_VALUES_VALIDITY)
+                 bool should_reset = (GT1_control_value_last_received_at == 0) || (millis() - GT1_control_value_last_received_at) > GENERAL_CONTROL_VALUES_VALIDITY;
+
+                 if (should_reset)
                  {
+                   LOG_DEBUG("Resetting GT2 emulator to:", vp_state.GT2_sensor);
                    GT2_emulator.update_target_ptr(&vp_state.GT2_sensor);
                  } });
 
@@ -180,8 +180,7 @@ void setup()
   app.onAvailable(ivtSerial, []()
                   {
                     auto raw = ivtSerial.readStringUntil('\n');
-                    LOG_INFO("Received serial data from IVT490:");
-                    LOG_DEBUG(raw);
+                    LOG_INFO("Received serial data from IVT490:", raw);
 
                     LOG_INFO("Publishing raw output to MQTT broker...");
                     mqttClient.publish(
@@ -199,7 +198,7 @@ void setup()
 
                     LOG_INFO("Successfully parsed serial message from IVT490.");
 
-                    LOG_INFO("Updating thermistor emulator");
+                    LOG_INFO("Adjusting thermistor emulator");
                     GT2_emulator.adjust(); });
 
   app.onRepeat(GENERAL_STATE_PUBLISH_INTERVAL, []

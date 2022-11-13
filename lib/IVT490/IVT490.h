@@ -131,13 +131,19 @@ namespace IVT490
 
             this->target = target;
 
-            LOG_DEBUG("Setting new target ptr, with current value:", *target);
+            LOG_INFO("Setting new target ptr, with current value:", *target);
 
             // Write an initial guess based on reverse interpolation of the NTC values
             auto wanted_resistance = NTC_interpolate_resistance(*this->target);
 
+            LOG_DEBUG("    equalling wanted resistance:", wanted_resistance);
+
             // This expects the connections to be made over PB0-PW0
-            this->wiper_value = (uint8_t)(STEPS * (wanted_resistance - WIPER_RESISTANCE) / MAX_RESISTANCE);
+            float fraction = (wanted_resistance - WIPER_RESISTANCE) / MAX_RESISTANCE;
+            fraction = max(0.0f, min(1.0f, fraction)); // Capping to usable range of digipot
+            LOG_DEBUG("    equalling capped fraction:", fraction);
+
+            this->wiper_value = (uint8_t)(STEPS * fraction) - 1;
 
             LOG_DEBUG("Setting new wiper value:", this->wiper_value);
             this->pot.setWiper(this->wiper_value);
@@ -145,8 +151,14 @@ namespace IVT490
 
         void adjust()
         {
+            LOG_INFO("Adjusting thermistor emulator based on feedback.");
+            LOG_DEBUG("    Target value:", *this->target);
+            LOG_DEBUG("    Feedback value:", *this->feedback);
+
             // This expects the connection to be made over PB0-PW0
-            int correction = (int)(5 * (*this->target - *this->feedback));
+            int correction = (int)(2 * (*this->target - *this->feedback));
+            LOG_DEBUG("    Correction to be applied:", correction);
+
             this->wiper_value = (uint8_t)max(min(this->wiper_value - correction, 255), 0);
 
             LOG_DEBUG("Setting new wiper value:", this->wiper_value);
