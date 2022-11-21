@@ -108,9 +108,9 @@ namespace IVT490
         // Parsing and interpreting each substring
         parsed.GT1 = 0.1 * split[1].toFloat();
         parsed.GT2_heatpump = 0.1 * split[2].toFloat();
-        parsed.GT3_1 = 0.1 * split[2].toFloat();
-        parsed.GT3_2 = 0.1 * split[3].toFloat();
-        parsed.GT3_3 = 0.1 * split[4].toFloat();
+        parsed.GT3_1 = 0.1 * split[3].toFloat();
+        parsed.GT3_2 = 0.1 * split[4].toFloat();
+        parsed.GT3_3 = 0.1 * split[5].toFloat();
         parsed.GT5 = 0.1 * split[6].toFloat();
         parsed.GT6 = 0.1 * split[7].toFloat();
         parsed.GT3_4 = 0.1 * split[8].toFloat();
@@ -154,11 +154,11 @@ namespace IVT490
         doc["GT3_1"] = state.GT3_1;
         doc["GT3_2"] = state.GT3_2;
         doc["GT3_2_LL"] = state.GT3_2_LL;
+        doc["GT3_2_UL"] = state.GT3_2_UL;
         doc["GT3_2_ULT"] = state.GT3_2_ULT;
         doc["GT3_3"] = state.GT3_3;
         doc["GT3_3_target"] = state.GT3_3_target;
         doc["GT3_3_LL"] = state.GT3_3_LL;
-        doc["GT3_2_UL"] = state.GT3_2_UL;
         doc["GT3_4"] = state.GT3_4;
         doc["GT5"] = state.GT5;
         doc["GT6"] = state.GT6;
