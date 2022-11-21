@@ -62,8 +62,7 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected &event)
 void onMqttConnect(bool sessionPresent)
 {
   LOG_INFO("Connected to MQTT.");
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/indoor_temperature").c_str(), 0);
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/indoor_temperature_set").c_str(), 0);
+  mqttClient.subscribe((MQTT_BASE_TOPIC + "/control/GT1_target").c_str(), 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason)
