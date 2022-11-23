@@ -31,6 +31,7 @@ BOM:
 Schematic:
 ![](circuit.svg)
 
+Note: The MCP41100 Vdd pin is connected to 5V in order to allow the 5V connection from the IVT490 ADC. According to the [datasheet](https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/ProductDocuments/DataSheets/11195c.pdf) this should render the 3.3V logic level of the Wemos D1 mini useless but nonetheless, it works...
 
 ## Software
 
