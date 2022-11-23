@@ -115,61 +115,87 @@ namespace IVT490
     //     VSS -|     |- PA0
     //          -------
 
-    template <uint8_t RESOLUTION, unsigned int MAX_RESISTANCE, unsigned int WIPER_RESISTANCE = 125>
+    template <unsigned int VALIDITY, uint8_t RESOLUTION, unsigned int MAX_RESISTANCE, unsigned int WIPER_RESISTANCE = 125>
     class IVT490ThermistorEmulator
     {
     public:
-        IVT490ThermistorEmulator(const float *feedback, uint8_t CS_pin)
+        IVT490ThermistorEmulator(uint8_t CS_pin)
         {
-            this->feedback = feedback;
+            this->target_birth_time = 0;
+
             this->pot.begin(CS_pin);
+            this->set_wiper_value_from_temperature(6);
         }
 
-        void update_target_ptr(float *target)
+        void set_wiper_value_from_temperature(float temperature)
         {
             static unsigned int STEPS = pow(2, RESOLUTION);
-
-            this->target = target;
-
-            LOG_INFO("Setting new target ptr, with current value:", *target);
+            LOG_DEBUG("Calculating wiper value for temperature:", temperature);
 
             // Write an initial guess based on reverse interpolation of the NTC values
-            auto wanted_resistance = NTC_interpolate_resistance(*this->target);
+            auto wanted_resistance = NTC_interpolate_resistance(temperature);
 
             LOG_DEBUG("    equalling wanted resistance:", wanted_resistance);
+
+            wanted_resistance += this->resistance_offset;
+            LOG_DEBUG("    adding resistance offset:", this->resistance_offset);
+            LOG_DEBUG("    resulting in wanted resistance:", wanted_resistance);
 
             // This expects the connections to be made over PB0-PW0
             float fraction = (wanted_resistance - WIPER_RESISTANCE) / MAX_RESISTANCE;
             fraction = max(0.0f, min(1.0f, fraction)); // Capping to usable range of digipot
             LOG_DEBUG("    equalling capped fraction:", fraction);
 
-            this->wiper_value = (uint8_t)(STEPS * fraction) - 1;
+            uint8_t wiper_value = (uint8_t)((STEPS - 1) * fraction);
+            LOG_DEBUG("    equalling wiper value:", wiper_value);
 
-            LOG_DEBUG("Setting new wiper value:", this->wiper_value);
-            this->pot.setWiper(this->wiper_value);
+            LOG_INFO("Writing new wiper value to pot:", wiper_value);
+
+            this->pot.setWiper(wiper_value);
         }
 
-        void adjust()
+        void set_external_target_value(float target)
         {
-            LOG_INFO("Adjusting thermistor emulator based on feedback.");
-            LOG_DEBUG("    Target value:", *this->target);
-            LOG_DEBUG("    Feedback value:", *this->feedback);
+            LOG_INFO("Setting new external target value:", target);
+            this->target = target;
+            this->target_birth_time = millis();
+            this->set_wiper_value_from_temperature(this->target);
+        }
+
+        void set_internal_target_value(float target)
+        {
+            if (millis() - this->target_birth_time <= VALIDITY && this->target_birth_time != 0)
+            {
+                LOG_INFO("External target value still valid, disregarding internal target value!");
+                return;
+            }
+
+            LOG_INFO("Setting new internal target value:", target);
+            this->target = target;
+            this->set_wiper_value_from_temperature(this->target);
+        }
+
+        void adjust_correction(float feedback)
+        {
+            LOG_INFO("Adjusting thermistor emulator correction based on feedback.");
+            LOG_DEBUG("    Target value:", this->target);
+            LOG_DEBUG("    Feedback value:", feedback);
 
             // This expects the connection to be made over PB0-PW0
-            int correction = (int)(2 * (*this->target - *this->feedback));
-            LOG_DEBUG("    Correction to be applied:", correction);
+            auto resistance_at_target = NTC_interpolate_resistance(this->target);
+            auto resistance_at_feedback = NTC_interpolate_resistance(feedback);
+            LOG_DEBUG("    resistance at target:", resistance_at_target);
+            LOG_DEBUG("    resistance at feedback:", resistance_at_feedback);
 
-            this->wiper_value = (uint8_t)max(min(this->wiper_value - correction, 255), 0);
-
-            LOG_DEBUG("Setting new wiper value:", this->wiper_value);
-            this->pot.setWiper(this->wiper_value);
+            this->resistance_offset += resistance_at_target - resistance_at_feedback;
+            LOG_DEBUG("Current resistance offset:", this->resistance_offset);
         }
 
     private:
-        float *target;
-        const float *feedback;
+        float target;
+        unsigned long target_birth_time;
         MCP41_Simple pot;
-        uint8_t wiper_value;
+        float resistance_offset = 0;
     };
 
 }
