@@ -31,8 +31,7 @@ IVT490::IVT490ThermistorReader<IVT490_ADC_R0> GT2_reader(IVT490_ADC_CS, 0);
 SMA::Filter<float, IVT490_ADC_FILTER_WINDOW_COUNT> filter;
 
 // Thermistor emulator
-IVT490::IVT490ThermistorEmulator<IVT490_DIGPOT_RESOLUTION, IVT490_DIGIPOT_MAX_RESISTANCE> GT2_emulator(&vp_state.GT2_heatpump, IVT490_DIGIPOT_CS);
-unsigned long GT1_control_value_last_received_at = 0;
+IVT490::IVT490ThermistorEmulator<GENERAL_CONTROL_VALUES_VALIDITY, IVT490_DIGPOT_RESOLUTION, IVT490_DIGIPOT_MAX_RESISTANCE> GT2_emulator(IVT490_DIGIPOT_CS);
 
 void connectToWifi()
 {
@@ -92,8 +91,6 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
   LOG_DEBUG("  index: ", index);
   LOG_DEBUG("  total: ", total);
 
-  static float GT2_target;
-
   if (String(topic).endsWith("control/GT1_target"))
   {
     auto value = String(payload).toFloat();
@@ -105,15 +102,13 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
     }
 
     LOG_INFO("New GT1_target value: ", value);
-    GT1_control_value_last_received_at = millis();
 
-    GT2_target = IVT490::inverse_heating_curve(
+    auto GT2_target = IVT490::inverse_heating_curve(
         IVT490_HEATING_CURVE_SLOPE,
         value);
     LOG_INFO("  New GT2_target value: ", GT2_target);
 
-    GT2_emulator.update_target_ptr(&GT2_target);
-    GT2_emulator.adjust();
+    GT2_emulator.set_external_target_value(GT2_target);
   }
   else
   {
@@ -163,17 +158,8 @@ void setup()
                  LOG_DEBUG("    GT2_sensor: ", value);
                  auto filtered_value = filter(value);
                  LOG_DEBUG("    GT2_sensor (filtered): ", filtered_value);
-                 vp_state.GT2_sensor = filtered_value; });
-
-  app.onRepeat(IVT490_DIGIPOT_RESET_PERIOD, []()
-               {
-                 bool should_reset = (GT1_control_value_last_received_at == 0) || (millis() - GT1_control_value_last_received_at) > GENERAL_CONTROL_VALUES_VALIDITY;
-
-                 if (should_reset)
-                 {
-                   LOG_DEBUG("Resetting GT2 emulator to:", vp_state.GT2_sensor);
-                   GT2_emulator.update_target_ptr(&vp_state.GT2_sensor);
-                 } });
+                 vp_state.GT2_sensor = filtered_value;
+                 GT2_emulator.set_internal_target_value(filtered_value); });
 
   // Serial listener to IVT490
   app.onAvailable(ivtSerial, []()
@@ -197,8 +183,8 @@ void setup()
 
                     LOG_INFO("Successfully parsed serial message from IVT490.");
 
-                    LOG_INFO("Adjusting thermistor emulator");
-                    GT2_emulator.adjust(); });
+                    LOG_INFO("Adjusting thermistor emulator corrections");
+                    GT2_emulator.adjust_correction(vp_state.GT2_heatpump); });
 
   app.onRepeat(GENERAL_STATE_PUBLISH_INTERVAL, []
                {
