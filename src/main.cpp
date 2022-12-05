@@ -28,8 +28,8 @@ bool IVT490_serial_connection_is_initialized = false;
 IVT490::IVT490State vp_state;
 
 // Thermistor reader
-IVT490::IVT490ThermistorReader<IVT490_ADC_R0> GT2_reader(IVT490_ADC_CS, 0);
-SMA::Filter<float, IVT490_ADC_FILTER_WINDOW_COUNT> filter;
+IVT490::IVT490ThermistorReader<IVT490_ADC_CH0_R0> GT2_reader(IVT490_ADC_CS, 0);
+SMA::Filter<float, IVT490_ADC_CH0_FILTER_WINDOW_COUNT> filter;
 
 // Thermistor emulator
 IVT490::IVT490ThermistorEmulator<GENERAL_CONTROL_VALUES_VALIDITY, IVT490_DIGPOT_RESOLUTION, IVT490_DIGIPOT_MAX_RESISTANCE> GT2_emulator(IVT490_DIGIPOT_CS);
@@ -151,10 +151,10 @@ void setup()
   // Connect to wifi and subsequently to mqtt broker
   connectToWifi();
 
-  // Read ADCs continuously
-  app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
+  // Read ADC CH0 continuously
+  app.onRepeat(IVT490_ADC_CH0_SAMPLING_INTERVAL, []()
                {
-                 LOG_DEBUG("Reading ADCs...");
+                 LOG_DEBUG("Reading ADC CH0...");
                  auto value = GT2_reader.read();
                  LOG_DEBUG("    GT2_sensor: ", value);
                  auto filtered_value = filter(value);
