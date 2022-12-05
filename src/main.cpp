@@ -22,6 +22,7 @@ Ticker wifiReconnectTimer;
 
 // IVT490 serial connection
 SoftwareSerial ivtSerial(IVT490_SERIAL_RX);
+bool IVT490_serial_connection_is_initialized = false;
 
 // Global states
 IVT490::IVT490State vp_state;
@@ -153,7 +154,7 @@ void setup()
   // Read ADCs continuously
   app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
                {
-                 LOG_INFO("Reading ADCs...");
+                 LOG_DEBUG("Reading ADCs...");
                  auto value = GT2_reader.read();
                  LOG_DEBUG("    GT2_sensor: ", value);
                  auto filtered_value = filter(value);
@@ -183,43 +184,47 @@ void setup()
 
                     LOG_INFO("Successfully parsed serial message from IVT490.");
 
+                    if (!IVT490_serial_connection_is_initialized){
+                      IVT490_serial_connection_is_initialized = true;
+                      LOG_INFO("Serial connection to IVT490 initialized correctly, enabling state publishing");
+                      app.onRepeat(GENERAL_STATE_PUBLISH_INTERVAL, []
+                                  {
+                                      auto doc = IVT490::serialize_IVT490State(vp_state);
+
+                                      LOG_INFO("Publishing to MQTT broker...");
+
+                                      // Publish the whole state as a single JSON blob
+                                      String json;
+                                      serializeJson(doc, json);
+
+                                      LOG_DEBUG(json);
+
+                                      mqttClient.publish(
+                                          (MQTT_BASE_TOPIC + String("/state")).c_str(),
+                                          0,
+                                          false,
+                                          json.c_str());
+
+                                      // Publish on individual topics
+                                      JsonObject root = doc.as<JsonObject>();
+                                      for (auto pair : root)
+                                      {
+                                        LOG_DEBUG(pair.key().c_str(), pair.value().as<String>());
+
+                                        mqttClient.publish(
+                                            (MQTT_BASE_TOPIC + String("/state/") + pair.key().c_str()).c_str(),
+                                            0,
+                                            false,
+                                            pair.value().as<String>().c_str());
+                                      } });
+                    }
+
                     LOG_INFO("Adjusting thermistor emulator corrections");
                     GT2_emulator.adjust_correction(vp_state.GT2_heatpump); });
 
-  app.onRepeat(GENERAL_STATE_PUBLISH_INTERVAL, []
-               {
-                    auto doc = IVT490::serialize_IVT490State(vp_state);
-
-                    LOG_INFO("Publishing to MQTT broker...");
-
-                    // Publish the whole state as a single JSON blob
-                    String json;
-                    serializeJson(doc, json);
-
-                    LOG_DEBUG(json);
-
-                    mqttClient.publish(
-                        (MQTT_BASE_TOPIC + String("/state")).c_str(),
-                        0,
-                        false,
-                        json.c_str());
-
-                    // Publish on individual topics
-                    JsonObject root = doc.as<JsonObject>();
-                    for (auto pair : root)
-                    {
-                      LOG_DEBUG(pair.key().c_str(), pair.value().as<String>());
-
-                      mqttClient.publish(
-                          (MQTT_BASE_TOPIC + String("/state/") + pair.key().c_str()).c_str(),
-                          0,
-                          false,
-                          pair.value().as<String>().c_str());
-                    } });
-
   app.onDelay(24 * 3600 * 1000, ESP.restart);
 
-  LOG_INFO("Setup complete, app started successfully...");
+  LOG_INFO("Setup complete, waiting for serial connection to IVT490 to initialize...");
 }
 
 void loop()
