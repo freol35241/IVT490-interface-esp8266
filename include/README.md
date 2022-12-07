@@ -24,10 +24,11 @@ More specifically, this project requires a header file named `config.h` to be pl
 #define IVT490_ADC_CS 15                     // D8
 #define IVT490_ADC_R0 10000                  // Ohm
 #define IVT490_ADC_SAMPLING_INTERVAL 1000    // milliseconds
-#define IVT490_ADC_FILTER_WINDOW_COUNT 10    //
+#define IVT490_ADC_FILTER_WINDOW_COUNT 600   // 10 minute average
 #define IVT490_DIGIPOT_CS 2                  // D4
 #define IVT490_DIGPOT_RESOLUTION 8           // bits
 #define IVT490_DIGIPOT_MAX_RESISTANCE 100000 // Ohms
+
 
 // To enable debug logging, uncomment the following line
 // #define DEBUGLOG_DEFAULT_LOG_LEVEL_DEBUG
