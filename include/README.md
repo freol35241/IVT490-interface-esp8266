@@ -19,8 +19,8 @@ More specifically, this project requires a header file named `config.h` to be pl
 #define MQTT_PW "YOUR MQTT PASSWORD"
 #define MQTT_BASE_TOPIC "BASE/TOPIC/FOR/PUBLISHING"
 
-#define IVT490_SERIAL_RX 11
-#define IVT490_HEATING_CURVE_SLOPE 4.7
+#define IVT490_SERIAL_RX 5                   // D1
+#define IVT490_HEATING_CURVE_SLOPE 4.7       // Should match the current configuration on your IVT490
 #define IVT490_ADC_CS 15                     // D8
 #define IVT490_ADC_R0 10000                  // Ohm
 #define IVT490_ADC_SAMPLING_INTERVAL 1000    // milliseconds
