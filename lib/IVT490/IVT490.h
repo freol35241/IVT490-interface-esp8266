@@ -64,6 +64,29 @@ namespace IVT490
         return (feed_temperature - 20) / (-0.16 * slope) + 20;
     }
 
+    // Control modes
+    enum IVT490ControlMode
+    {
+        none,
+        indoor_sensor,
+        feed_temperature
+    };
+
+    class IVT490Controller
+    {
+    public:
+        IVT490Controller();
+        void set_outdoor_temperature_sensor_reading(float temperature);
+        void set_indoor_temperature_sensor_reading(float temperature);
+        void set_feed_temperature(float temperature);
+
+    private:
+        IVT490ControlMode control_mode;
+        float outdoor_temperature;
+        float indoor_temperature;
+
+    }
+
     // The IVT490ThermistorReader expects the following circuit
     //   Vs
     //   |
