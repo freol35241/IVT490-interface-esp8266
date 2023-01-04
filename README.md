@@ -52,20 +52,41 @@ The interface publishes data at 10 second intervals according to:
 
 * `{MQTT_BASE_TOPIC}/state`
 
-  A JSON blob consisting of the full state of the agent and IVT490 heatpump
+  A JSON blob consisting of the full state of IVT490 heatpump
 
 * `{MQTT_BASE_TOPIC}/state/{parameter}`
 
   All parameters in the state are also published onto individual topics as floats/ints/bools.
 
+* `{MQTT_BASE_TOPIC}/controller/state`
 
-The interface listens for control commands according to:
+  A JSON blob consisting of the full state of the software controller
 
-* `{MQTT_BASE_TOPIC}/control/GT1_target`
+* `{MQTT_BASE_TOPIC}/controller/state/{parameter}`
+
+  All parameters in the state are also published onto individual topics as floats/ints/bools.
+
+The controler listens for control commands according to:
+
+* `{MQTT_BASE_TOPIC}/controller/set/feed_temperature_target`
 
   Set a new target feed temperature of the heating system by publishing to this topic. 
-  
-Please note that all the values received on the control topics have a finite validity and, as such, even non-changing control values need to be repeatedly published to avoid fallback to the default behavior.
+
+* `{MQTT_BASE_TOPIC}/controller/set/indoor_temperature_target`
+
+  Set a new target indoor temperature of the heating system by publishing to this topic. 
+
+* `{MQTT_BASE_TOPIC}/controller/set/outdoor_temperature_offset`
+
+  Set an arbitrary offset to the oudoor temperature sensor of the heating system by publishing to this topic. 
+
+The controller also listens to feedback according to:
+
+* `{MQTT_BASE_TOPIC}/controller/feedback/indoor_temperature`
+
+  Indoor temperature feedback for the controller.
+
+Please note that all the values received on the `controller` topics have a finite validity and, as such, even non-changing control values need to be repeatedly published to avoid fallback to the default behavior.
 
 ## Build and deploy
 
