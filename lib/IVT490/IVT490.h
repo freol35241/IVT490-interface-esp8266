@@ -17,12 +17,12 @@ namespace IVT490
         float GT1_target;   // Framledningstemperatur börvärde, grader Celcius
         float GT1_UL;       // Framledningstemperatur övre gräns, grader Celcius
         float GT1_LL;       // Framledningstemperatur undre gräns, grader Celcius
-        float GT1_LLT;      // (??) Framledningstemperatur undre gräns, grader Celcius
+        float GT1_LLT;      // Framledningstemperatur undre gräns för tillskott, grader Celcius
         float GT2_heatpump; // Utetemperatur input till vp, grader Celcius
         float GT2_sensor;   // Utetemperatur från sensor, grader Celcius
         float GT3_1;        // Tappvarmvatten, grader Celcius
         float GT3_2;        // Varmvatten, grader Celcius
-        float GT3_2_ULT;    // Varmvatten övre gräns, grader Celcius
+        float GT3_2_ULT;    // Varmvatten övre gräns för tillskott, grader Celcius
         float GT3_2_LL;     // Varmvatten under gräns, grader Celcius
         float GT3_3;        // Värmevatten, grader Celcius
         float GT3_3_target; // Värmevatten börvärde, grader Celcius
@@ -34,17 +34,17 @@ namespace IVT490
 
         float electricity_supplement; // Eltillskott (elpatron) användning, procent (%) utnyttjande
 
-        bool GP1; // Lågtrycksvakt
-        bool GP2; // Högtrycksvakt
-        bool GP3; // Avfrostningsvakt
-        bool compressor;
-        bool vacation;
-        bool P1; // Circulation pump
-        bool P2; // External pump
-        bool alarm;
-        bool fan;
-        bool SV1_open;
-        bool SV1_close;
+        bool GP1;        // Lågtrycksvakt
+        bool GP2;        // Högtrycksvakt
+        bool GP3;        // Avfrostningsvakt
+        bool compressor; // Kompressor
+        bool vacation;   // Semesterläge (sänkt framledningstemperatur)
+        bool P1;         // Circulation pump
+        bool P2;         // External pump
+        bool alarm;      // Larm
+        bool fan;        // ??
+        bool SV1_open;   // Shunt öppnar
+        bool SV1_close;  // Shunt stänger
     };
 
     float NTC_interpolate_temperature(float resistance);
@@ -62,29 +62,6 @@ namespace IVT490
     inline float inverse_heating_curve(float slope, float feed_temperature)
     {
         return (feed_temperature - 20) / (-0.16 * slope) + 20;
-    }
-
-    // Control modes
-    enum IVT490ControlMode
-    {
-        none,
-        indoor_sensor,
-        feed_temperature
-    };
-
-    class IVT490Controller
-    {
-    public:
-        IVT490Controller();
-        void set_outdoor_temperature_sensor_reading(float temperature);
-        void set_indoor_temperature_sensor_reading(float temperature);
-        void set_feed_temperature(float temperature);
-
-    private:
-        IVT490ControlMode control_mode;
-        float outdoor_temperature;
-        float indoor_temperature;
-
     }
 
     // The IVT490ThermistorReader expects the following circuit
@@ -138,16 +115,20 @@ namespace IVT490
     //     VSS -|     |- PA0
     //          -------
 
-    template <unsigned int VALIDITY, uint8_t RESOLUTION, unsigned int MAX_RESISTANCE, unsigned int WIPER_RESISTANCE = 125>
+    template <uint8_t RESOLUTION, unsigned int MAX_RESISTANCE, unsigned int WIPER_RESISTANCE = 125>
     class IVT490ThermistorEmulator
     {
     public:
         IVT490ThermistorEmulator(uint8_t CS_pin)
         {
-            this->target_birth_time = 0;
-
             this->pot.begin(CS_pin);
             this->set_wiper_value_from_temperature(6);
+        }
+
+        void set_target_value(float target)
+        {
+            this->target = target;
+            this->set_wiper_value_from_temperature(this->target);
         }
 
         void set_wiper_value_from_temperature(float temperature)
@@ -177,27 +158,6 @@ namespace IVT490
             this->pot.setWiper(wiper_value);
         }
 
-        void set_external_target_value(float target)
-        {
-            LOG_INFO("Setting new external target value:", target);
-            this->target = target;
-            this->target_birth_time = millis();
-            this->set_wiper_value_from_temperature(this->target);
-        }
-
-        void set_internal_target_value(float target)
-        {
-            if (millis() - this->target_birth_time <= VALIDITY && this->target_birth_time != 0)
-            {
-                LOG_INFO("External target value still valid, disregarding internal target value!");
-                return;
-            }
-
-            LOG_INFO("Setting new internal target value:", target);
-            this->target = target;
-            this->set_wiper_value_from_temperature(this->target);
-        }
-
         void adjust_correction(float feedback)
         {
             LOG_INFO("Adjusting thermistor emulator correction based on feedback.");
@@ -216,9 +176,146 @@ namespace IVT490
 
     private:
         float target;
-        unsigned long target_birth_time;
         MCP41_Simple pot;
         float resistance_offset = 0;
+    };
+
+    template <unsigned int VALIDITY>
+    class Controller
+    {
+    public:
+        Controller(){};
+        void set_outdoor_temperature(float temperature)
+        {
+            this->outdoor_temperature = temperature;
+        }
+
+        void set_outdoor_temperature_offset(float offset)
+        {
+            this->outdoor_temperature_offset = offset;
+            this->outdoor_temperature_offset_last_updated = millis();
+        }
+
+        bool outdoor_temperature_offset_is_valid()
+        {
+            return (millis() - this->outdoor_temperature_offset_last_updated <= VALIDITY && this->outdoor_temperature_offset_last_updated != 0);
+        }
+
+        void set_indoor_temperature(float temperature)
+        {
+            this->indoor_temperature = temperature;
+            this->indoor_temperature_last_updated = millis();
+        }
+
+        void set_indoor_temperature_target(float target)
+        {
+            this->indoor_temperature_target = target;
+        }
+
+        void set_indoor_temperature_weight(float weight)
+        {
+            this->indoor_temperature_weight = weight;
+        }
+
+        bool indoor_temperature_is_valid()
+        {
+            return (millis() - this->indoor_temperature_last_updated <= VALIDITY && this->indoor_temperature_last_updated != 0);
+        }
+
+        void set_feed_temperature_target(float temperature)
+        {
+            this->feed_temperature_target = temperature;
+            this->feed_temperature_target_last_updated = millis();
+        }
+
+        void set_heating_curve_slope(float slope)
+        {
+            this->heating_curve_slope = slope;
+        }
+
+        bool feed_temperature_target_is_valid()
+        {
+            return (millis() - this->feed_temperature_target_last_updated <= VALIDITY && this->feed_temperature_target_last_updated != 0);
+        }
+
+        float get_control_value()
+        {
+            float control_value;
+
+            if (feed_temperature_target_is_valid())
+            {
+                LOG_INFO("Controller: Feed temperature target is valid!");
+                LOG_INFO("Controller: Requested feed temperature:", this->feed_temperature_target);
+                control_value = IVT490::inverse_heating_curve(
+                    this->heating_curve_slope,
+                    this->feed_temperature_target);
+
+                LOG_INFO("Controller: New control value:", control_value);
+                return control_value;
+            }
+
+            control_value = this->outdoor_temperature;
+
+            LOG_INFO("Controller: Base outdoor temperature:", control_value);
+
+            if (outdoor_temperature_offset_is_valid())
+            {
+                LOG_INFO("Controller: Outdoor temperature offset is valid!");
+                LOG_INFO("Controller: Outdoor temperature offset applied:", this->outdoor_temperature_offset);
+
+                control_value += this->outdoor_temperature_offset;
+            }
+
+            if (indoor_temperature_is_valid())
+            {
+                LOG_INFO("Controller: Indoor temperature is valid!");
+                LOG_INFO("Controller: Requested indoor temperature:", this->indoor_temperature_target);
+                LOG_INFO("Controller: Current indoor temperature:", this->indoor_temperature);
+                auto indoor_temperature_correction = this->indoor_temperature_weight * (this->indoor_temperature - this->indoor_temperature_target);
+                LOG_INFO("Controller: Correction applied:", indoor_temperature_correction);
+
+                control_value += indoor_temperature_correction;
+            }
+
+            LOG_INFO("Controller: New control value:", control_value);
+            return control_value;
+        }
+
+        DynamicJsonDocument serialize()
+        {
+            DynamicJsonDocument doc(1024);
+
+            doc["feed_temperature_target"]["value"] = this->feed_temperature_target;
+            doc["feed_temperature_target"]["valid"] = this->feed_temperature_target_is_valid();
+
+            doc["indoor_temperature_feedback"]["value"] = this->indoor_temperature;
+            doc["indoor_temperature_feedback"]["valid"] = this->indoor_temperature_is_valid();
+
+            doc["outdoor_temperature_offset"]["value"] = this->outdoor_temperature_offset;
+            doc["outdoor_temperature_offset"]["valid"] = this->outdoor_temperature_offset_is_valid();
+
+            doc["indoor_temperature_target"]["value"] = this->indoor_temperature_target;
+            doc["indoor_temperature_weight"]["value"] = this->indoor_temperature_weight;
+
+            doc["control_value"] = this->get_control_value();
+
+            return doc;
+        }
+
+    private:
+        float outdoor_temperature;
+
+        float outdoor_temperature_offset = 0.0;
+        unsigned long outdoor_temperature_offset_last_updated = 0;
+
+        float indoor_temperature_target = 20.0;
+        float indoor_temperature_weight = 1.0;
+        float indoor_temperature;
+        unsigned long indoor_temperature_last_updated = 0;
+
+        float feed_temperature_target;
+        float heating_curve_slope;
+        unsigned long feed_temperature_target_last_updated = 0;
     };
 
 }
