@@ -69,6 +69,7 @@ void onMqttConnect(bool sessionPresent)
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/indoor_temperature_target").c_str(), 0);
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/outdoor_temperature_offset").c_str(), 0);
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/feedback/indoor_temperature").c_str(), 0);
+  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/vacation_mode").c_str(), 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason)
@@ -146,6 +147,11 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_indoor_temperature(value);
   }
+  else if (String(topic).endsWith("/controller/set/vacation_mode"))
+  {
+    auto value = String(payload).toInt();
+    controller.set_vacation_mode((bool)value);
+  }
   else
   {
     LOG_ERROR("Received MQTT message on topic which we do not know how to handle. This should not happen!");
@@ -189,6 +195,10 @@ void publish_json_object(String &topic, DynamicJsonDocument &doc)
 void setup()
 {
   Serial.begin(115200);
+
+  // Disable vacation mode on boot
+  pinMode(IVT490_EXT_IN_RELAY_PIN, OUTPUT);
+  digitalWrite(IVT490_EXT_IN_RELAY_PIN, LOW);
 
   // IVT490 serial connection
   // Baud rate = 9600
@@ -238,7 +248,10 @@ void setup()
                 auto control_value = controller.get_control_value();
 
                  // Set the control value
-                 GT2_emulator.set_target_value(control_value); });
+                 GT2_emulator.set_target_value(control_value); 
+                 
+                 // Make sure EXT_IN relay is in correct position
+                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, controller.get_vacation_mode()); });
 
   // Serial listener to IVT490
   app.onAvailable(ivtSerial, []()

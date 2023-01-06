@@ -9,6 +9,7 @@ In essence, a combination of software and hardware is used to:
 * Read serial output from the heatpump
 * Directly read a subset of the NTC resisitive sensors used by the IVT490 using ADCs
 * Emulate resistive sensors using digitally controlled potentiometers (DCPs)
+* Control the EXT_IN port on the heatpump to activate/deactivate the vacation mode
 
 As such, it is possible to emulate input to the IVT490 controller board. The default behavior is however to emulate the same temperature as is being sensed by the resistive sensors, which essentially means to keep the heatpump working as per its own configuration.
 
@@ -27,6 +28,7 @@ BOM:
 - MCP3208 (or a similar one with fewer channels, all wiring schematics are shown using this particular one and may have to be adjusted if exchanged)
 - MCP41100
 - 10kOhm resistor
+- 3v3 relay
 
 Schematic:
 ![](circuit.svg)
@@ -43,6 +45,8 @@ All pre-deployment configuration of the software in this repository is done usin
 
 
 2. Intersect the GT2 sensor cabling and connect the [Hardware](#hardware) as a "man-in-the-middle".
+
+3. Connect the 3v3 relay to the `EXT_IN` port on the heatpump control board.
 
 ## API
 
@@ -79,6 +83,10 @@ The controler listens for control commands according to:
 * `{MQTT_BASE_TOPIC}/controller/set/outdoor_temperature_offset`
 
   Set an arbitrary offset to the oudoor temperature sensor of the heating system by publishing to this topic. 
+
+* `{MQTT_BASE_TOPIC}/controller/set/vacation_mode`
+
+  Activate (1) or deactivate (0) vacation mode on the heatpump.
 
 The controller also listens to feedback according to:
 

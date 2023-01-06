@@ -281,6 +281,16 @@ namespace IVT490
             return control_value;
         }
 
+        void set_vacation_mode(bool mode)
+        {
+            this->vacation_mode = mode;
+        }
+
+        bool get_vacation_mode()
+        {
+            return this->vacation_mode;
+        }
+
         DynamicJsonDocument serialize()
         {
             DynamicJsonDocument doc(1024);
@@ -299,6 +309,8 @@ namespace IVT490
 
             doc["control_value"] = this->get_control_value();
 
+            doc["vacation_mode"] = this->vacation_mode;
+
             return doc;
         }
 
@@ -316,6 +328,8 @@ namespace IVT490
         float feed_temperature_target;
         float heating_curve_slope;
         unsigned long feed_temperature_target_last_updated = 0;
+
+        bool vacation_mode = false;
     };
 
 }
