@@ -266,7 +266,7 @@ namespace IVT490
                 control_value += this->outdoor_temperature_offset;
             }
 
-            if (indoor_temperature_is_valid())
+            if (indoor_temperature_is_valid() && !get_vacation_mode())
             {
                 LOG_INFO("Controller: Indoor temperature is valid!");
                 LOG_INFO("Controller: Requested indoor temperature:", this->indoor_temperature_target);
@@ -279,6 +279,16 @@ namespace IVT490
 
             LOG_INFO("Controller: New control value:", control_value);
             return control_value;
+        }
+
+        void set_vacation_mode(bool mode)
+        {
+            this->vacation_mode = mode;
+        }
+
+        bool get_vacation_mode()
+        {
+            return this->vacation_mode;
         }
 
         DynamicJsonDocument serialize()
@@ -299,6 +309,8 @@ namespace IVT490
 
             doc["control_value"] = this->get_control_value();
 
+            doc["vacation_mode"] = this->vacation_mode;
+
             return doc;
         }
 
@@ -316,6 +328,8 @@ namespace IVT490
         float feed_temperature_target;
         float heating_curve_slope;
         unsigned long feed_temperature_target_last_updated = 0;
+
+        bool vacation_mode = false;
     };
 
 }
