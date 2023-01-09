@@ -248,8 +248,8 @@ void setup()
                 auto control_value = controller.get_control_value();
 
                  // Set the control value
-                 GT2_emulator.set_target_value(control_value); 
-                 
+                 GT2_emulator.set_target_value(control_value);
+
                  // Make sure EXT_IN relay is in correct position
                  digitalWrite(IVT490_EXT_IN_RELAY_PIN, controller.get_vacation_mode()); });
 
@@ -265,7 +265,6 @@ void setup()
                         0,
                         false,
                         raw.c_str());
-
 
                     if (parse_IVT490(raw, vp_state) < 0)
                     {

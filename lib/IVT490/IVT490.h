@@ -266,7 +266,7 @@ namespace IVT490
                 control_value += this->outdoor_temperature_offset;
             }
 
-            if (indoor_temperature_is_valid())
+            if (indoor_temperature_is_valid() && !get_vacation_mode())
             {
                 LOG_INFO("Controller: Indoor temperature is valid!");
                 LOG_INFO("Controller: Requested indoor temperature:", this->indoor_temperature_target);
