@@ -229,6 +229,7 @@ void setup()
   controller.set_heating_curve_slope(IVT490_HEATING_CURVE_SLOPE);
   controller.set_indoor_temperature_target(20.0);
   controller.set_indoor_temperature_weight(IVT490_INDOOR_TEMPERATURE_FEEDBACK_CONTROL_WEIGHT);
+  controller.set_summer_temperature_limit(IVT490_SUMMER_TEMPERATURE_LIMIT);
 
   // Read ADCs continuously
   app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
