@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
 #include <Ticker.h>
 #include <ReactESP.h>
@@ -298,6 +299,16 @@ void setup()
                     LOG_INFO("Adjusting thermistor emulator corrections");
                     GT2_emulator.adjust_correction(vp_state.GT2_heatpump); });
 
+  // Configure OTA
+  ArduinoOTA.setHostname(OTA_HOSTNAME);
+#ifdef OTA_PASSWORD
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+#endif
+  ArduinoOTA.begin();
+  app.onTick([]()
+             { ArduinoOTA.handle(); });
+
+  // Reset once a day to avoid mysterious fails...
   app.onDelay(24 * 3600 * 1000, ESP.restart);
 
   LOG_INFO("Setup complete, waiting for serial connection to IVT490 to initialize...");
