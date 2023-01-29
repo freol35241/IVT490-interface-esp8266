@@ -201,6 +201,11 @@ namespace IVT490
             return (millis() - this->outdoor_temperature_offset_last_updated <= VALIDITY && this->outdoor_temperature_offset_last_updated != 0);
         }
 
+        void set_summer_temperature_limit(float temperature)
+        {
+            this->summer_temperature_limit = temperature;
+        }
+
         void set_indoor_temperature(float temperature)
         {
             this->indoor_temperature = temperature;
@@ -277,6 +282,13 @@ namespace IVT490
                 control_value += indoor_temperature_correction;
             }
 
+            // Safety check
+            if (this->summer_temperature_limit > 0 && this->outdoor_temperature < 1.0 && control_value >= this->summer_temperature_limit)
+            {
+                control_value = this->summer_temperature_limit - 1.0;
+                LOG_WARN("Controller: Control value adjusted to avoid P1 stopping during freezing temperatures!");
+            }
+
             LOG_INFO("Controller: New control value:", control_value);
             return control_value;
         }
@@ -330,6 +342,7 @@ namespace IVT490
         unsigned long feed_temperature_target_last_updated = 0;
 
         bool vacation_mode = false;
+        float summer_temperature_limit = -1;
     };
 
 }
