@@ -13,6 +13,9 @@ More specifically, this project requires a header file named `config.h` to be pl
 #define WIFI_SSID "YOUR WIFI SSID"
 #define WIFI_PW "YOUR WIFI PASSWORD"
 
+#define OTA_HOSTNAME "esp8266-ivt490"
+// #define OTA_PASSWORD "YOUR-PASSWORD"
+
 #define MQTT_HOST IPAddress(XXX, XXX, XXX, XXX)
 #define MQTT_PORT XXXX
 #define MQTT_USER "YOUR MQTT USERNAME"
