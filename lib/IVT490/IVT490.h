@@ -198,7 +198,7 @@ namespace IVT490
 
         bool outdoor_temperature_offset_is_valid()
         {
-            return (millis() - this->outdoor_temperature_offset_last_updated <= VALIDITY && this->outdoor_temperature_offset_last_updated != 0);
+            return (millis() - this->outdoor_temperature_offset_last_updated <= VALIDITY && this->outdoor_temperature_offset_last_updated != 0 && !isnan(this->outdoor_temperature_offset));
         }
 
         void set_summer_temperature_limit(float temperature)
@@ -224,7 +224,8 @@ namespace IVT490
 
         bool indoor_temperature_is_valid()
         {
-            return (millis() - this->indoor_temperature_last_updated <= VALIDITY && this->indoor_temperature_last_updated != 0);
+            return (
+                millis() - this->indoor_temperature_last_updated <= VALIDITY && this->indoor_temperature_last_updated != 0 && !isnan(this->indoor_temperature));
         }
 
         void set_feed_temperature_target(float temperature)
@@ -240,7 +241,7 @@ namespace IVT490
 
         bool feed_temperature_target_is_valid()
         {
-            return (millis() - this->feed_temperature_target_last_updated <= VALIDITY && this->feed_temperature_target_last_updated != 0);
+            return (millis() - this->feed_temperature_target_last_updated <= VALIDITY && this->feed_temperature_target_last_updated != 0 && !isnan(this->feed_temperature_target));
         }
 
         float get_control_value()
