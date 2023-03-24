@@ -244,6 +244,25 @@ namespace IVT490
             return (millis() - this->feed_temperature_target_last_updated <= VALIDITY && this->feed_temperature_target_last_updated != 0 && !isnan(this->feed_temperature_target));
         }
 
+        float handle_summer_temperature_limit_during_freezing_conditions(float control_value)
+        {
+            if (this->summer_temperature_limit > 0 && this->outdoor_temperature < 1.0 && control_value >= this->summer_temperature_limit - 1)
+            {
+                // We want to have a lower feed temperature than what can be achieved without hitting the summer mode (i.e P1 stops),
+                // at the same time as the outdoor temperature is approaching freezing... Not good!
+                // The best we can do is to:
+                // * Ensure the faked outdoor temperature (i.e. control value) is lower than the summer temperature limit
+                // * Enable vacation mode to lower the feed temperature without risking that P1 stops
+                LOG_WARN("Controller: Control value adjusted and vacation mode enabled to avoid P1 stopping during freezing temperatures!");
+                this->vacation_mode = true;
+                return this->summer_temperature_limit - 1.0;
+            }
+
+            // Else, disable vacation mode and return the control_value untouched
+            this->vacation_mode = false;
+            return control_value;
+        }
+
         float get_control_value()
         {
             float control_value;
@@ -255,6 +274,8 @@ namespace IVT490
                 control_value = IVT490::inverse_heating_curve(
                     this->heating_curve_slope,
                     this->feed_temperature_target);
+
+                control_value = this->handle_summer_temperature_limit_during_freezing_conditions(control_value);
 
                 LOG_INFO("Controller: New control value:", control_value);
                 return control_value;
@@ -272,7 +293,7 @@ namespace IVT490
                 control_value += this->outdoor_temperature_offset;
             }
 
-            if (indoor_temperature_is_valid() && !get_vacation_mode())
+            if (indoor_temperature_is_valid())
             {
                 LOG_INFO("Controller: Indoor temperature is valid!");
                 LOG_INFO("Controller: Requested indoor temperature:", this->indoor_temperature_target);
@@ -283,20 +304,10 @@ namespace IVT490
                 control_value += indoor_temperature_correction;
             }
 
-            // Safety check
-            if (this->summer_temperature_limit > 0 && this->outdoor_temperature < 1.0 && control_value >= this->summer_temperature_limit)
-            {
-                control_value = this->summer_temperature_limit - 1.0;
-                LOG_WARN("Controller: Control value adjusted to avoid P1 stopping during freezing temperatures!");
-            }
+            control_value = this->handle_summer_temperature_limit_during_freezing_conditions(control_value);
 
             LOG_INFO("Controller: New control value:", control_value);
             return control_value;
-        }
-
-        void set_vacation_mode(bool mode)
-        {
-            this->vacation_mode = mode;
         }
 
         bool get_vacation_mode()
