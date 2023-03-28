@@ -32,7 +32,7 @@ More specifically, this project requires a header file named `config.h` to be pl
 #define IVT490_DIGPOT_RESOLUTION 8           // bits
 #define IVT490_DIGIPOT_MAX_RESISTANCE 100000 // Ohms
 #define IVT490_CONTROL_INTERVAL 1000         // milliseconds
-#define IVT490_EXT_IN_RELAY 6                // D??
+#define IVT490_EXT_IN_RELAY_PIN 6            // D??
 #define IVT490_INDOOR_TEMPERATURE_FEEDBACK_CONTROL_WEIGHT 10
 #define IVT490_SUMMER_TEMPERATURE_LIMIT 14.0
 

@@ -148,11 +148,6 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_indoor_temperature(value);
   }
-  else if (String(topic).endsWith("/controller/set/vacation_mode"))
-  {
-    auto value = String(payload).toInt();
-    controller.set_vacation_mode((bool)value);
-  }
   else
   {
     LOG_ERROR("Received MQTT message on topic which we do not know how to handle. This should not happen!");

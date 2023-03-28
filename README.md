@@ -84,10 +84,6 @@ The controler listens for control commands according to:
 
   Set an arbitrary offset to the oudoor temperature sensor of the heating system by publishing to this topic. 
 
-* `{MQTT_BASE_TOPIC}/controller/set/vacation_mode`
-
-  Activate (1) or deactivate (0) vacation mode on the heatpump.
-
 The controller also listens to feedback according to:
 
 * `{MQTT_BASE_TOPIC}/controller/feedback/indoor_temperature`
