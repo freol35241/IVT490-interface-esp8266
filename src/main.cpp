@@ -248,7 +248,11 @@ void setup()
                  GT2_emulator.set_target_value(control_value);
 
                  // Make sure EXT_IN relay is in correct position
-                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, vacation_mode); });
+                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, vacation_mode);
+
+                 // Control boiler through GT3_2 (dual relays)
+                 // TODO: Another emulator
+               });
 
   // Serial listener to IVT490
   app.onAvailable(ivtSerial, []()

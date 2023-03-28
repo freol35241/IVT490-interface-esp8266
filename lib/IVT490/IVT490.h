@@ -180,6 +180,13 @@ namespace IVT490
         float resistance_offset = 0;
     };
 
+    enum GT3_2_ControlState
+    {
+        BAU = 0, // Business-as-usual
+        BLOCK = 1,
+        BOOST = 2
+    };
+
     template <unsigned int VALIDITY>
     class Controller
     {
@@ -316,6 +323,16 @@ namespace IVT490
             return std::make_pair(control_value, vacation_mode);
         }
 
+        void set_GT3_2_control_state(GT3_2_ControlState state)
+        {
+            this->GT3_2_control_state = state;
+        }
+
+        GT3_2_ControlState get_GT3_2_control_state()
+        {
+            return this->GT3_2_control_state;
+        }
+
         DynamicJsonDocument serialize()
         {
             DynamicJsonDocument doc(1024);
@@ -336,6 +353,9 @@ namespace IVT490
             doc["control_value"] = control_value;
             doc["vacation_mode"] = vacation_mode;
 
+            doc["GT3_2_control_state"] = this->GT3_2_control_state;
+            doc["GT3_2_estimated"] = this->GT3_2_estimated;
+
             return doc;
         }
 
@@ -355,6 +375,9 @@ namespace IVT490
         unsigned long feed_temperature_target_last_updated = 0;
 
         float summer_temperature_limit = -1;
+
+        GT3_2_ControlState GT3_2_control_state = GT3_2_ControlState::BAU;
+        float GT3_2_estimated; // Varmvatten estimerad när GT3_2 kontrolleras externt, grader Celcius
     };
 
 }
