@@ -242,13 +242,13 @@ void setup()
                {
                  LOG_DEBUG("Running control code...");
 
-                auto control_value = controller.get_control_value();
+                auto [control_value, vacation_mode] = controller.get_control_values();
 
                  // Set the control value
                  GT2_emulator.set_target_value(control_value);
 
                  // Make sure EXT_IN relay is in correct position
-                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, controller.get_vacation_mode()); });
+                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, vacation_mode); });
 
   // Serial listener to IVT490
   app.onAvailable(ivtSerial, []()

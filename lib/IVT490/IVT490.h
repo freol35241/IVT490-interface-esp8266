@@ -244,7 +244,7 @@ namespace IVT490
             return (millis() - this->feed_temperature_target_last_updated <= VALIDITY && this->feed_temperature_target_last_updated != 0 && !isnan(this->feed_temperature_target));
         }
 
-        float handle_summer_temperature_limit_during_freezing_conditions(float control_value)
+        std::pair<float, bool> vacation_mode_logic(float control_value)
         {
             if (this->summer_temperature_limit > 0 && this->outdoor_temperature < 1.0 && control_value >= this->summer_temperature_limit - 1)
             {
@@ -254,18 +254,23 @@ namespace IVT490
                 // * Ensure the faked outdoor temperature (i.e. control value) is lower than the summer temperature limit
                 // * Enable vacation mode to lower the feed temperature without risking that P1 stops
                 LOG_WARN("Controller: Control value adjusted and vacation mode enabled to avoid P1 stopping during freezing temperatures!");
-                this->vacation_mode = true;
-                return this->summer_temperature_limit - 1.0;
+                return std::make_pair(this->summer_temperature_limit - 1.0, true);
+            }
+            else if (control_value > 21.0)
+            {
+                // We want to have a lower feed temperature than what the heatpump allows. Not sure if it actually helps to enable
+                // vacation mode here but it probably doesnt hurt.
+                return std::make_pair(control_value, true);
             }
 
             // Else, disable vacation mode and return the control_value untouched
-            this->vacation_mode = false;
-            return control_value;
+            return std::make_pair(control_value, false);
         }
 
-        float get_control_value()
+        std::pair<float, bool> get_control_values()
         {
             float control_value;
+            bool vacation_mode = false;
 
             if (feed_temperature_target_is_valid())
             {
@@ -275,10 +280,10 @@ namespace IVT490
                     this->heating_curve_slope,
                     this->feed_temperature_target);
 
-                control_value = this->handle_summer_temperature_limit_during_freezing_conditions(control_value);
+                std::tie(control_value, vacation_mode) = this->vacation_mode_logic(control_value);
 
                 LOG_INFO("Controller: New control value:", control_value);
-                return control_value;
+                return std::make_pair(control_value, vacation_mode);
             }
 
             control_value = this->outdoor_temperature;
@@ -304,15 +309,11 @@ namespace IVT490
                 control_value += indoor_temperature_correction;
             }
 
-            control_value = this->handle_summer_temperature_limit_during_freezing_conditions(control_value);
+            std::tie(control_value, vacation_mode) = this->vacation_mode_logic(control_value);
 
             LOG_INFO("Controller: New control value:", control_value);
-            return control_value;
-        }
-
-        bool get_vacation_mode()
-        {
-            return this->vacation_mode;
+            LOG_INFO("Controller: Vacation mode:", vacation_mode);
+            return std::make_pair(control_value, vacation_mode);
         }
 
         DynamicJsonDocument serialize()
@@ -331,9 +332,9 @@ namespace IVT490
             doc["indoor_temperature_target"]["value"] = this->indoor_temperature_target;
             doc["indoor_temperature_weight"]["value"] = this->indoor_temperature_weight;
 
-            doc["control_value"] = this->get_control_value();
-
-            doc["vacation_mode"] = this->vacation_mode;
+            auto [control_value, vacation_mode] = this->get_control_values();
+            doc["control_value"] = control_value;
+            doc["vacation_mode"] = vacation_mode;
 
             return doc;
         }
@@ -353,7 +354,6 @@ namespace IVT490
         float heating_curve_slope;
         unsigned long feed_temperature_target_last_updated = 0;
 
-        bool vacation_mode = false;
         float summer_temperature_limit = -1;
     };
 
