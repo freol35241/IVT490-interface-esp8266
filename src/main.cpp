@@ -28,12 +28,15 @@ bool IVT490_serial_connection_is_initialized = false;
 // Global states
 IVT490::IVT490State vp_state;
 
-// Thermistor reader
-IVT490::IVT490ThermistorReader<IVT490_ADC_R0> GT2_reader(IVT490_ADC_CS, 0);
-SMA::Filter<float, IVT490_ADC_FILTER_WINDOW_COUNT> filter;
+// Thermistor readers and filters
+IVT490::IVT490ThermistorReader<IVT490_ADC_CH0_R0> GT2_reader(IVT490_ADC_CS, 0);
+SMA::Filter<float, IVT490_ADC_CH0_FILTER_WINDOW_COUNT> GT2_filter;
+IVT490::IVT490ThermistorReader<IVT490_ADC_CH1_R0> GT32_reader(IVT490_ADC_CS, 1);
+SMA::Filter<float, IVT490_ADC_CH1_FILTER_WINDOW_COUNT> GT32_filter;
 
-// Thermistor emulator
-IVT490::IVT490ThermistorEmulator<IVT490_DIGPOT_RESOLUTION, IVT490_DIGIPOT_MAX_RESISTANCE> GT2_emulator(IVT490_DIGIPOT_CS);
+// Thermistor emulators
+IVT490::IVT490ThermistorEmulator<IVT490_DIGIPOT_GT2_RESOLUTION, IVT490_DIGIPOT_GT2_MAX_RESISTANCE> GT2_emulator(IVT490_DIGIPOT_GT2_CS);
+IVT490::IVT490ThermistorEmulator<IVT490_DIGIPOT_GT32_RESOLUTION, IVT490_DIGIPOT_GT32_MAX_RESISTANCE> GT32_emulator(IVT490_DIGIPOT_GT32_CS);
 
 // Controller
 IVT490::Controller<GENERAL_CONTROL_VALUES_VALIDITY> controller;
@@ -148,6 +151,18 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_indoor_temperature(value);
   }
+  else if (String(topic).endsWith("/controller/set/GT3_2_state"))
+  {
+    auto value = String(payload).toInt();
+
+    if (value == 0)
+    {
+      LOG_ERROR("Failed to parse payload as a float");
+      return;
+    }
+
+    controller.set_GT3_2_control_state(static_cast<IVT490::GT3_2_ControlState>(value));
+  }
   else
   {
     LOG_ERROR("Received MQTT message on topic which we do not know how to handle. This should not happen!");
@@ -229,30 +244,53 @@ void setup()
   // Read ADCs continuously
   app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
                {
-                 LOG_DEBUG("Reading ADCs...");
+                 LOG_DEBUG("Reading ADC CH0...");
                  auto value = GT2_reader.read();
                  LOG_DEBUG("    GT2_sensor: ", value);
-                 auto filtered_value = filter(value);
+                 auto filtered_value = GT2_filter(value);
                  LOG_DEBUG("    GT2_sensor (filtered): ", filtered_value);
                  vp_state.GT2_sensor = filtered_value;
                  controller.set_outdoor_temperature(filtered_value); });
+
+  app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
+               {
+                 LOG_DEBUG("Reading ADC CH1...");
+                 auto value = GT32_reader.read();
+                 LOG_DEBUG("    GT3_2_sensor: ", value);
+                 auto filtered_value = GT32_filter(value);
+                 LOG_DEBUG("    GT3_2_sensor (filtered): ", filtered_value);
+                 vp_state.GT3_2_sensor = filtered_value; });
 
   // Run control code
   app.onRepeat(IVT490_CONTROL_INTERVAL, []()
                {
                  LOG_DEBUG("Running control code...");
 
-                auto [control_value, vacation_mode] = controller.get_control_values();
+                 auto [control_value, vacation_mode] = controller.get_control_values();
 
-                 // Set the control value
+                 // Control feed temperature
                  GT2_emulator.set_target_value(control_value);
 
                  // Make sure EXT_IN relay is in correct position
                  digitalWrite(IVT490_EXT_IN_RELAY_PIN, vacation_mode);
 
-                 // Control boiler through GT3_2 (dual relays)
-                 // TODO: Another emulator
-               });
+                 // Control boiler (GT3_2 emulator)
+                 switch (controller.get_GT3_2_control_state())
+                 {
+                 case IVT490::GT3_2_ControlState::BLOCK:
+                  // TODO
+                  break;
+
+                 case IVT490::GT3_2_ControlState::BOOST:
+                  // TODO
+                  break;
+
+                 case IVT490::GT3_2_ControlState::BAU:
+                 default:
+                  GT32_emulator.set_target_value(vp_state.GT3_2_sensor);
+                  break;
+
+                 } });
 
   // Serial listener to IVT490
   app.onAvailable(ivtSerial, []()
@@ -297,7 +335,8 @@ void setup()
                     }
 
                     LOG_INFO("Adjusting thermistor emulator corrections");
-                    GT2_emulator.adjust_correction(vp_state.GT2_heatpump); });
+                    GT2_emulator.adjust_correction(vp_state.GT2_heatpump);
+                    GT32_emulator.adjust_correction(vp_state.GT3_2_heatpump); });
 
   // Configure OTA
   ArduinoOTA.setHostname(OTA_HOSTNAME);

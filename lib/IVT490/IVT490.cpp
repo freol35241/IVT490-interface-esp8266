@@ -109,7 +109,7 @@ namespace IVT490
         parsed.GT1 = 0.1 * split[1].toFloat();
         parsed.GT2_heatpump = 0.1 * split[2].toFloat();
         parsed.GT3_1 = 0.1 * split[3].toFloat();
-        parsed.GT3_2 = 0.1 * split[4].toFloat();
+        parsed.GT3_2_heatpump = 0.1 * split[4].toFloat();
         parsed.GT3_3 = 0.1 * split[5].toFloat();
         parsed.GT5 = 0.1 * split[6].toFloat();
         parsed.GT6 = 0.1 * split[7].toFloat();
@@ -152,7 +152,8 @@ namespace IVT490
         doc["GT2_heatpump"] = state.GT2_heatpump;
         doc["GT2_sensor"] = state.GT2_sensor;
         doc["GT3_1"] = state.GT3_1;
-        doc["GT3_2"] = state.GT3_2;
+        doc["GT3_2_heatpump"] = state.GT3_2_heatpump;
+        doc["GT3_2_sensor"] = state.GT3_2_sensor;
         doc["GT3_2_LL"] = state.GT3_2_LL;
         doc["GT3_2_UL"] = state.GT3_2_UL;
         doc["GT3_2_ULT"] = state.GT3_2_ULT;

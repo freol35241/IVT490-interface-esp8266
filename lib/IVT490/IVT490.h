@@ -13,24 +13,25 @@ namespace IVT490
     struct IVT490State
     {
 
-        float GT1;          // Framledningstemperatur, grader Celsius
-        float GT1_target;   // Framledningstemperatur börvärde, grader Celcius
-        float GT1_UL;       // Framledningstemperatur övre gräns, grader Celcius
-        float GT1_LL;       // Framledningstemperatur undre gräns, grader Celcius
-        float GT1_LLT;      // Framledningstemperatur undre gräns för tillskott, grader Celcius
-        float GT2_heatpump; // Utetemperatur input till vp, grader Celcius
-        float GT2_sensor;   // Utetemperatur från sensor, grader Celcius
-        float GT3_1;        // Tappvarmvatten, grader Celcius
-        float GT3_2;        // Varmvatten, grader Celcius
-        float GT3_2_ULT;    // Varmvatten övre gräns för tillskott, grader Celcius
-        float GT3_2_LL;     // Varmvatten under gräns, grader Celcius
-        float GT3_3;        // Värmevatten, grader Celcius
-        float GT3_3_target; // Värmevatten börvärde, grader Celcius
-        float GT3_2_UL;     // Värmevatten övre gräns, grader Celcius
-        float GT3_3_LL;     // Värmevatten undre gräns, grader Celcius
-        float GT3_4;        // Extra acc. tank, grader Celcius
-        float GT5;          // Innetemperatur, grader Celcius
-        float GT6;          // Hetgastemperatur, grader Celcius
+        float GT1;            // Framledningstemperatur, grader Celsius
+        float GT1_target;     // Framledningstemperatur börvärde, grader Celcius
+        float GT1_UL;         // Framledningstemperatur övre gräns, grader Celcius
+        float GT1_LL;         // Framledningstemperatur undre gräns, grader Celcius
+        float GT1_LLT;        // Framledningstemperatur undre gräns för tillskott, grader Celcius
+        float GT2_heatpump;   // Utetemperatur input till vp, grader Celcius
+        float GT2_sensor;     // Utetemperatur från sensor, grader Celcius
+        float GT3_1;          // Tappvarmvatten, grader Celcius
+        float GT3_2_heatpump; // Varmvatten input till vp, grader Celcius
+        float GT3_2_sensor;   // Varmvatten från sensor, grader Celcius
+        float GT3_2_ULT;      // Varmvatten övre gräns för tillskott, grader Celcius
+        float GT3_2_LL;       // Varmvatten under gräns, grader Celcius
+        float GT3_3;          // Värmevatten, grader Celcius
+        float GT3_3_target;   // Värmevatten börvärde, grader Celcius
+        float GT3_2_UL;       // Värmevatten övre gräns, grader Celcius
+        float GT3_3_LL;       // Värmevatten undre gräns, grader Celcius
+        float GT3_4;          // Extra acc. tank, grader Celcius
+        float GT5;            // Innetemperatur, grader Celcius
+        float GT6;            // Hetgastemperatur, grader Celcius
 
         float electricity_supplement; // Eltillskott (elpatron) användning, procent (%) utnyttjande
 
@@ -182,9 +183,9 @@ namespace IVT490
 
     enum GT3_2_ControlState
     {
-        BAU = 0, // Business-as-usual
-        BLOCK = 1,
-        BOOST = 2
+        BAU = 1, // Business-as-usual
+        BLOCK = 2,
+        BOOST = 3
     };
 
     template <unsigned int VALIDITY>
@@ -354,7 +355,6 @@ namespace IVT490
             doc["vacation_mode"] = vacation_mode;
 
             doc["GT3_2_control_state"] = this->GT3_2_control_state;
-            doc["GT3_2_estimated"] = this->GT3_2_estimated;
 
             return doc;
         }
@@ -377,7 +377,6 @@ namespace IVT490
         float summer_temperature_limit = -1;
 
         GT3_2_ControlState GT3_2_control_state = GT3_2_ControlState::BAU;
-        float GT3_2_estimated; // Varmvatten estimerad när GT3_2 kontrolleras externt, grader Celcius
     };
 
 }
