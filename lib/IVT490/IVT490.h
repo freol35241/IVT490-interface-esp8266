@@ -7,53 +7,63 @@
 #include <ArduinoJson.h>
 #include <DebugLog.h>
 
+#include "SMA.h"
+
 namespace IVT490
 {
+    struct State {
+        struct Serial {
+            float GT1;            // Framledningstemperatur, grader Celsius
+            float GT1_target;     // Framledningstemperatur börvärde, grader Celcius
+            float GT1_UL;         // Framledningstemperatur övre gräns, grader Celcius
+            float GT1_LL;         // Framledningstemperatur undre gräns, grader Celcius
+            float GT1_LLT;        // Framledningstemperatur undre gräns för tillskott, grader Celcius
+            float GT2;            // Utetemperatur, grader Celcius
+            float GT3_1;          // Tappvarmvatten, grader Celcius
+            float GT3_2;          // Varmvatten, grader Celcius
+            float GT3_2_ULT;      // Varmvatten övre gräns för tillskott, grader Celcius
+            float GT3_2_LL;       // Varmvatten under gräns, grader Celcius
+            float GT3_3;          // Värmevatten, grader Celcius
+            float GT3_3_target;   // Värmevatten börvärde, grader Celcius
+            float GT3_2_UL;       // Värmevatten övre gräns, grader Celcius
+            float GT3_3_LL;       // Värmevatten undre gräns, grader Celcius
+            float GT3_4;          // Extra acc. tank, grader Celcius
+            float GT5;            // Innetemperatur, grader Celcius
+            float GT6;            // Hetgastemperatur, grader Celcius
 
-    struct IVT490State
-    {
+            float electricity_supplement; // Eltillskott (elpatron) användning, procent (%) utnyttjande
 
-        float GT1;            // Framledningstemperatur, grader Celsius
-        float GT1_target;     // Framledningstemperatur börvärde, grader Celcius
-        float GT1_UL;         // Framledningstemperatur övre gräns, grader Celcius
-        float GT1_LL;         // Framledningstemperatur undre gräns, grader Celcius
-        float GT1_LLT;        // Framledningstemperatur undre gräns för tillskott, grader Celcius
-        float GT2_heatpump;   // Utetemperatur input till vp, grader Celcius
-        float GT2_sensor;     // Utetemperatur från sensor, grader Celcius
-        float GT3_1;          // Tappvarmvatten, grader Celcius
-        float GT3_2_heatpump; // Varmvatten input till vp, grader Celcius
-        float GT3_2_sensor;   // Varmvatten från sensor, grader Celcius
-        float GT3_2_ULT;      // Varmvatten övre gräns för tillskott, grader Celcius
-        float GT3_2_LL;       // Varmvatten under gräns, grader Celcius
-        float GT3_3;          // Värmevatten, grader Celcius
-        float GT3_3_target;   // Värmevatten börvärde, grader Celcius
-        float GT3_2_UL;       // Värmevatten övre gräns, grader Celcius
-        float GT3_3_LL;       // Värmevatten undre gräns, grader Celcius
-        float GT3_4;          // Extra acc. tank, grader Celcius
-        float GT5;            // Innetemperatur, grader Celcius
-        float GT6;            // Hetgastemperatur, grader Celcius
+            bool GP1;        // Lågtrycksvakt
+            bool GP2;        // Högtrycksvakt
+            bool GP3;        // Avfrostningsvakt
+            bool compressor; // Kompressor
+            bool vacation;   // Semesterläge (sänkt framledningstemperatur)
+            bool P1;         // Circulation pump
+            bool P2;         // External pump
+            bool alarm;      // Larm
+            bool fan;        // ??
+            bool SV1_open;   // Shunt öppnar
+            bool SV1_close;  // Shunt stänger
+        };
 
-        float electricity_supplement; // Eltillskott (elpatron) användning, procent (%) utnyttjande
+        Serial serial;
 
-        bool GP1;        // Lågtrycksvakt
-        bool GP2;        // Högtrycksvakt
-        bool GP3;        // Avfrostningsvakt
-        bool compressor; // Kompressor
-        bool vacation;   // Semesterläge (sänkt framledningstemperatur)
-        bool P1;         // Circulation pump
-        bool P2;         // External pump
-        bool alarm;      // Larm
-        bool fan;        // ??
-        bool SV1_open;   // Shunt öppnar
-        bool SV1_close;  // Shunt stänger
+        struct Sensor {
+            float raw;
+            float filtered;
+        };
+
+        Sensor GT2;
+        Sensor GT3_2;
+
+        DynamicJsonDocument serialize() const;
+
     };
+
+    int parse_serial(String raw, State::Serial &serial);
 
     float NTC_interpolate_temperature(float resistance);
     float NTC_interpolate_resistance(float temperature);
-
-    int parse_IVT490(String raw, IVT490State &parsed);
-
-    DynamicJsonDocument serialize_IVT490State(const IVT490State &state);
 
     inline float heating_curve(float slope, float outdoor_temperature)
     {
@@ -64,6 +74,8 @@ namespace IVT490
     {
         return (feed_temperature - 20) / (-0.16 * slope) + 20;
     }
+
+
 
     // The IVT490ThermistorReader expects the following circuit
     //   Vs
@@ -76,33 +88,42 @@ namespace IVT490
     //   |
     //  GND
 
-    template <unsigned int R_0>
-    class IVT490ThermistorReader
+    class ThermistorReader
+    // TODO: Encapsulate filter and let read modify a Sensor struct type
     {
     public:
-        IVT490ThermistorReader(uint8_t CS_pin, uint8_t channel)
+        ThermistorReader(uint8_t CS_pin, uint8_t channel, unsigned int R_0)
         {
             this->adc.begin(CS_pin);
             this->channel = channel;
+            this->R_0 = R_0;
         }
-        float read()
+        void read(State::Sensor &sensor)
         {
+            LOG_DEBUG("Reading ADC CH", this->channel, "...");
+
             float adc_value = this->adc.analogRead(this->channel);
             float max_value = this->adc.maxValue();
 
-            LOG_DEBUG("ADC value (channel", this->channel, "):", adc_value);
-            LOG_DEBUG("ADC max value:", max_value);
+            LOG_DEBUG("  ADC value (channel", this->channel, "):", adc_value);
+            LOG_DEBUG("  ADC max value:", max_value);
 
-            float resistance = adc_value > 0.0f ? R_0 * ((max_value / adc_value) - 1) : std::numeric_limits<float>::max();
+            float resistance = adc_value > 0.0f ? this->R_0 * ((max_value / adc_value) - 1) : std::numeric_limits<float>::max();
 
-            LOG_DEBUG("Resistance:", resistance, "ohm");
+            LOG_DEBUG("  Resistance:", resistance, "ohm");
 
-            return NTC_interpolate_temperature(resistance);
+            sensor.raw = NTC_interpolate_temperature(resistance);
+            sensor.filtered = this->filter(sensor.raw);
+
+            LOG_DEBUG("  Raw value:", sensor.raw, "degrees");
+            LOG_DEBUG("  Filtered value:", sensor.filtered, "degrees");
         }
 
     private:
         MCP3208 adc;
         uint8_t channel;
+        unsigned int R_0;
+        SMA::Filter<float, 600> filter;
     };
 
     // The IVT490ThermistorEmulator expects the following circuit
@@ -116,13 +137,19 @@ namespace IVT490
     //     VSS -|     |- PA0
     //          -------
 
-    template <uint8_t RESOLUTION, unsigned int MAX_RESISTANCE, unsigned int WIPER_RESISTANCE = 125>
-    class IVT490ThermistorEmulator
+    class ThermistorEmulator
     {
     public:
-        IVT490ThermistorEmulator(uint8_t CS_pin)
+        ThermistorEmulator(
+            uint8_t CS_pin,
+            uint8_t resolution,
+            unsigned int max_resistance,
+            unsigned int wiper_resistance = 125)
         {
             this->pot.begin(CS_pin);
+            this->resolution = resolution;
+            this->max_resistance = max_resistance;
+            this->wiper_resistance = wiper_resistance;
             this->set_wiper_value_from_temperature(6);
         }
 
@@ -134,7 +161,7 @@ namespace IVT490
 
         void set_wiper_value_from_temperature(float temperature)
         {
-            static unsigned int STEPS = pow(2, RESOLUTION);
+            static unsigned int STEPS = pow(2, this->resolution);
             LOG_DEBUG("Calculating wiper value for temperature:", temperature);
 
             // Write an initial guess based on reverse interpolation of the NTC values
@@ -147,7 +174,7 @@ namespace IVT490
             LOG_DEBUG("    resulting in wanted resistance:", wanted_resistance);
 
             // This expects the connections to be made over PB0-PW0
-            float fraction = (wanted_resistance - WIPER_RESISTANCE) / MAX_RESISTANCE;
+            float fraction = (wanted_resistance - this->wiper_resistance) / this->max_resistance;
             fraction = max(0.0f, min(1.0f, fraction)); // Capping to usable range of digipot
             LOG_DEBUG("    equalling capped fraction:", fraction);
 
@@ -179,204 +206,9 @@ namespace IVT490
         float target;
         MCP41_Simple pot;
         float resistance_offset = 0;
-    };
-
-    enum GT3_2_ControlState
-    {
-        BAU = 1, // Business-as-usual
-        BLOCK = 2,
-        BOOST = 3
-    };
-
-    template <unsigned int VALIDITY>
-    class Controller
-    {
-    public:
-        Controller(){};
-        void set_outdoor_temperature(float temperature)
-        {
-            this->outdoor_temperature = temperature;
-        }
-
-        void set_outdoor_temperature_offset(float offset)
-        {
-            this->outdoor_temperature_offset = offset;
-            this->outdoor_temperature_offset_last_updated = millis();
-        }
-
-        bool outdoor_temperature_offset_is_valid()
-        {
-            return (millis() - this->outdoor_temperature_offset_last_updated <= VALIDITY && this->outdoor_temperature_offset_last_updated != 0 && !isnan(this->outdoor_temperature_offset));
-        }
-
-        void set_summer_temperature_limit(float temperature)
-        {
-            this->summer_temperature_limit = temperature;
-        }
-
-        void set_indoor_temperature(float temperature)
-        {
-            this->indoor_temperature = temperature;
-            this->indoor_temperature_last_updated = millis();
-        }
-
-        void set_indoor_temperature_target(float target)
-        {
-            this->indoor_temperature_target = target;
-        }
-
-        void set_indoor_temperature_weight(float weight)
-        {
-            this->indoor_temperature_weight = weight;
-        }
-
-        bool indoor_temperature_is_valid()
-        {
-            return (
-                millis() - this->indoor_temperature_last_updated <= VALIDITY && this->indoor_temperature_last_updated != 0 && !isnan(this->indoor_temperature));
-        }
-
-        void set_feed_temperature_target(float temperature)
-        {
-            this->feed_temperature_target = temperature;
-            this->feed_temperature_target_last_updated = millis();
-        }
-
-        void set_heating_curve_slope(float slope)
-        {
-            this->heating_curve_slope = slope;
-        }
-
-        bool feed_temperature_target_is_valid()
-        {
-            return (millis() - this->feed_temperature_target_last_updated <= VALIDITY && this->feed_temperature_target_last_updated != 0 && !isnan(this->feed_temperature_target));
-        }
-
-        std::pair<float, bool> vacation_mode_logic(float control_value)
-        {
-            if (this->summer_temperature_limit > 0 && this->outdoor_temperature < 1.0 && control_value >= this->summer_temperature_limit - 1)
-            {
-                // We want to have a lower feed temperature than what can be achieved without hitting the summer mode (i.e P1 stops),
-                // at the same time as the outdoor temperature is approaching freezing... Not good!
-                // The best we can do is to:
-                // * Ensure the faked outdoor temperature (i.e. control value) is lower than the summer temperature limit
-                // * Enable vacation mode to lower the feed temperature without risking that P1 stops
-                LOG_WARN("Controller: Control value adjusted and vacation mode enabled to avoid P1 stopping during freezing temperatures!");
-                return std::make_pair(this->summer_temperature_limit - 1.0, true);
-            }
-            else if (control_value > 21.0)
-            {
-                // We want to have a lower feed temperature than what the heatpump allows. Not sure if it actually helps to enable
-                // vacation mode here but it probably doesnt hurt.
-                return std::make_pair(control_value, true);
-            }
-
-            // Else, disable vacation mode and return the control_value untouched
-            return std::make_pair(control_value, false);
-        }
-
-        std::pair<float, bool> get_control_values()
-        {
-            float control_value;
-            bool vacation_mode = false;
-
-            if (feed_temperature_target_is_valid())
-            {
-                LOG_INFO("Controller: Feed temperature target is valid!");
-                LOG_INFO("Controller: Requested feed temperature:", this->feed_temperature_target);
-                control_value = IVT490::inverse_heating_curve(
-                    this->heating_curve_slope,
-                    this->feed_temperature_target);
-
-                std::tie(control_value, vacation_mode) = this->vacation_mode_logic(control_value);
-
-                LOG_INFO("Controller: New control value:", control_value);
-                return std::make_pair(control_value, vacation_mode);
-            }
-
-            control_value = this->outdoor_temperature;
-
-            LOG_INFO("Controller: Base outdoor temperature:", control_value);
-
-            if (outdoor_temperature_offset_is_valid())
-            {
-                LOG_INFO("Controller: Outdoor temperature offset is valid!");
-                LOG_INFO("Controller: Outdoor temperature offset applied:", this->outdoor_temperature_offset);
-
-                control_value += this->outdoor_temperature_offset;
-            }
-
-            if (indoor_temperature_is_valid())
-            {
-                LOG_INFO("Controller: Indoor temperature is valid!");
-                LOG_INFO("Controller: Requested indoor temperature:", this->indoor_temperature_target);
-                LOG_INFO("Controller: Current indoor temperature:", this->indoor_temperature);
-                auto indoor_temperature_correction = this->indoor_temperature_weight * (this->indoor_temperature - this->indoor_temperature_target);
-                LOG_INFO("Controller: Correction applied:", indoor_temperature_correction);
-
-                control_value += indoor_temperature_correction;
-            }
-
-            std::tie(control_value, vacation_mode) = this->vacation_mode_logic(control_value);
-
-            LOG_INFO("Controller: New control value:", control_value);
-            LOG_INFO("Controller: Vacation mode:", vacation_mode);
-            return std::make_pair(control_value, vacation_mode);
-        }
-
-        void set_GT3_2_control_state(GT3_2_ControlState state)
-        {
-            this->GT3_2_control_state = state;
-        }
-
-        GT3_2_ControlState get_GT3_2_control_state()
-        {
-            return this->GT3_2_control_state;
-        }
-
-        DynamicJsonDocument serialize()
-        {
-            DynamicJsonDocument doc(1024);
-
-            doc["feed_temperature_target"]["value"] = this->feed_temperature_target;
-            doc["feed_temperature_target"]["valid"] = this->feed_temperature_target_is_valid();
-
-            doc["indoor_temperature_feedback"]["value"] = this->indoor_temperature;
-            doc["indoor_temperature_feedback"]["valid"] = this->indoor_temperature_is_valid();
-
-            doc["outdoor_temperature_offset"]["value"] = this->outdoor_temperature_offset;
-            doc["outdoor_temperature_offset"]["valid"] = this->outdoor_temperature_offset_is_valid();
-
-            doc["indoor_temperature_target"]["value"] = this->indoor_temperature_target;
-            doc["indoor_temperature_weight"]["value"] = this->indoor_temperature_weight;
-
-            auto [control_value, vacation_mode] = this->get_control_values();
-            doc["control_value"] = control_value;
-            doc["vacation_mode"] = vacation_mode;
-
-            doc["GT3_2_control_state"] = this->GT3_2_control_state;
-
-            return doc;
-        }
-
-    private:
-        float outdoor_temperature;
-
-        float outdoor_temperature_offset = 0.0;
-        unsigned long outdoor_temperature_offset_last_updated = 0;
-
-        float indoor_temperature_target = 20.0;
-        float indoor_temperature_weight = 1.0;
-        float indoor_temperature;
-        unsigned long indoor_temperature_last_updated = 0;
-
-        float feed_temperature_target;
-        float heating_curve_slope;
-        unsigned long feed_temperature_target_last_updated = 0;
-
-        float summer_temperature_limit = -1;
-
-        GT3_2_ControlState GT3_2_control_state = GT3_2_ControlState::BAU;
+        uint8_t resolution;
+        unsigned int max_resistance;
+        unsigned int wiper_resistance;
     };
 
 }

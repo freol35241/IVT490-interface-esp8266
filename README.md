@@ -90,6 +90,14 @@ The controller also listens to feedback according to:
 
   Indoor temperature feedback for the controller.
 
+* `{MQTT_BASE_TOPIC}/controller/set/GT3_2_state`
+
+  Operating state for the GT3_2 emulator, can be one of:
+
+  * 1 (Business as usual)
+  * 2 (Block mode)
+  * 3 (Boost mode)
+
 Please note that all the values received on the `controller` topics have a finite validity and, as such, even non-changing control values need to be repeatedly published to avoid fallback to the default behavior.
 
 ## Build and deploy

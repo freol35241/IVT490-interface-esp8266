@@ -1,4 +1,5 @@
 #include "IVT490.h"
+#include "SMA.h"
 #include "MultiMap.h"
 
 #define IVT490_NO_OF_ITEMS_IN_SENTENCE 37
@@ -75,7 +76,7 @@ namespace IVT490
         return -multiMap<float>(temperature, NTC_temperatures, NTC_resistances, NTC_number_of_values);
     }
 
-    int parse_IVT490(String raw, IVT490State &parsed)
+    int parse_serial(String raw, State::Serial &serial)
     {
         String split[IVT490_NO_OF_ITEMS_IN_SENTENCE];
 
@@ -106,76 +107,82 @@ namespace IVT490
         }
 
         // Parsing and interpreting each substring
-        parsed.GT1 = 0.1 * split[1].toFloat();
-        parsed.GT2_heatpump = 0.1 * split[2].toFloat();
-        parsed.GT3_1 = 0.1 * split[3].toFloat();
-        parsed.GT3_2_heatpump = 0.1 * split[4].toFloat();
-        parsed.GT3_3 = 0.1 * split[5].toFloat();
-        parsed.GT5 = 0.1 * split[6].toFloat();
-        parsed.GT6 = 0.1 * split[7].toFloat();
-        parsed.GT3_4 = 0.1 * split[8].toFloat();
-        parsed.GP3 = (bool)split[9].toInt();
-        parsed.GP2 = (bool)split[10].toInt();
-        parsed.GP1 = (bool)split[11].toInt();
-        parsed.vacation = (bool)split[12].toInt();
-        parsed.compressor = (bool)split[13].toInt();
-        parsed.SV1_open = (bool)split[14].toInt();
-        parsed.SV1_close = (bool)split[15].toInt();
-        parsed.P1 = (bool)split[16].toInt();
-        parsed.fan = (bool)split[17].toInt();
-        parsed.alarm = (bool)split[18].toInt();
-        parsed.P2 = (bool)split[19].toInt();
-        parsed.GT1_LLT = 0.1 * split[20].toFloat();
-        parsed.GT1_LL = 0.1 * split[21].toFloat();
-        parsed.GT1_target = 0.1 * split[22].toFloat();
-        parsed.GT1_UL = 0.1 * split[23].toFloat();
-        parsed.GT3_2_LL = 0.1 * split[24].toFloat();
-        parsed.GT3_2_ULT = 0.1 * split[25].toFloat();
-        parsed.GT3_2_UL = 0.1 * split[26].toFloat();
-        parsed.GT3_3_LL = 0.1 * split[27].toFloat();
-        parsed.GT3_3_target = 0.1 * split[28].toFloat();
-        parsed.electricity_supplement = 0.1 * split[33].toFloat();
+        serial.GT1 = 0.1 * split[1].toFloat();
+        serial.GT2 = 0.1 * split[2].toFloat();
+        serial.GT3_1 = 0.1 * split[3].toFloat();
+        serial.GT3_2 = 0.1 * split[4].toFloat();
+        serial.GT3_3 = 0.1 * split[5].toFloat();
+        serial.GT5 = 0.1 * split[6].toFloat();
+        serial.GT6 = 0.1 * split[7].toFloat();
+        serial.GT3_4 = 0.1 * split[8].toFloat();
+        serial.GP3 = (bool)split[9].toInt();
+        serial.GP2 = (bool)split[10].toInt();
+        serial.GP1 = (bool)split[11].toInt();
+        serial.vacation = (bool)split[12].toInt();
+        serial.compressor = (bool)split[13].toInt();
+        serial.SV1_open = (bool)split[14].toInt();
+        serial.SV1_close = (bool)split[15].toInt();
+        serial.P1 = (bool)split[16].toInt();
+        serial.fan = (bool)split[17].toInt();
+        serial.alarm = (bool)split[18].toInt();
+        serial.P2 = (bool)split[19].toInt();
+        serial.GT1_LLT = 0.1 * split[20].toFloat();
+        serial.GT1_LL = 0.1 * split[21].toFloat();
+        serial.GT1_target = 0.1 * split[22].toFloat();
+        serial.GT1_UL = 0.1 * split[23].toFloat();
+        serial.GT3_2_LL = 0.1 * split[24].toFloat();
+        serial.GT3_2_ULT = 0.1 * split[25].toFloat();
+        serial.GT3_2_UL = 0.1 * split[26].toFloat();
+        serial.GT3_3_LL = 0.1 * split[27].toFloat();
+        serial.GT3_3_target = 0.1 * split[28].toFloat();
+        serial.electricity_supplement = 0.1 * split[33].toFloat();
 
         return 0;
     }
 
-    DynamicJsonDocument serialize_IVT490State(const IVT490State &state)
+    DynamicJsonDocument State::serialize() const
     {
-        LOG_INFO("Serializing IVT490State");
+        LOG_INFO("Serializing IVT490::State");
         DynamicJsonDocument doc(4096);
 
-        doc["GT1"] = state.GT1;
-        doc["GT1_target"] = state.GT1_target;
-        doc["GT1_LLT"] = state.GT1_LLT;
-        doc["GT1_LL"] = state.GT1_LL;
-        doc["GT1_UL"] = state.GT1_UL;
-        doc["GT2_heatpump"] = state.GT2_heatpump;
-        doc["GT2_sensor"] = state.GT2_sensor;
-        doc["GT3_1"] = state.GT3_1;
-        doc["GT3_2_heatpump"] = state.GT3_2_heatpump;
-        doc["GT3_2_sensor"] = state.GT3_2_sensor;
-        doc["GT3_2_LL"] = state.GT3_2_LL;
-        doc["GT3_2_UL"] = state.GT3_2_UL;
-        doc["GT3_2_ULT"] = state.GT3_2_ULT;
-        doc["GT3_3"] = state.GT3_3;
-        doc["GT3_3_target"] = state.GT3_3_target;
-        doc["GT3_3_LL"] = state.GT3_3_LL;
-        doc["GT3_4"] = state.GT3_4;
-        doc["GT5"] = state.GT5;
-        doc["GT6"] = state.GT6;
+        auto serial = this->serial;
 
-        doc["electricity_supplement"] = state.electricity_supplement;
+        doc["serial"]["GT1"] = serial.GT1;
+        doc["serial"]["GT1_target"] = serial.GT1_target;
+        doc["serial"]["GT1_LLT"] = serial.GT1_LLT;
+        doc["serial"]["GT1_LL"] = serial.GT1_LL;
+        doc["serial"]["GT1_UL"] = serial.GT1_UL;
+        doc["serial"]["GT2"] = serial.GT2;
+        doc["serial"]["GT3_1"] = serial.GT3_1;
+        doc["serial"]["GT3_2"] = serial.GT3_2;
+        doc["serial"]["GT3_2_LL"] = serial.GT3_2_LL;
+        doc["serial"]["GT3_2_UL"] = serial.GT3_2_UL;
+        doc["serial"]["GT3_2_ULT"] = serial.GT3_2_ULT;
+        doc["serial"]["GT3_3"] = serial.GT3_3;
+        doc["serial"]["GT3_3_target"] = serial.GT3_3_target;
+        doc["serial"]["GT3_3_LL"] = serial.GT3_3_LL;
+        doc["serial"]["GT3_4"] = serial.GT3_4;
+        doc["serial"]["GT5"] = serial.GT5;
+        doc["serial"]["GT6"] = serial.GT6;
 
-        doc["GP1"] = state.GP1;
-        doc["GP2"] = state.GP2;
-        doc["GP3"] = state.GP3;
-        doc["compressor"] = state.compressor;
-        doc["vacation"] = state.vacation;
-        doc["P1"] = state.P1;
-        doc["alarm"] = state.alarm;
-        doc["fan"] = state.fan;
-        doc["SV1_open"] = state.SV1_open;
-        doc["SV1_close"] = state.SV1_close;
+        doc["serial"]["electricity_supplement"] = serial.electricity_supplement;
+
+        doc["serial"]["GP1"] = serial.GP1;
+        doc["serial"]["GP2"] = serial.GP2;
+        doc["serial"]["GP3"] = serial.GP3;
+        doc["serial"]["compressor"] = serial.compressor;
+        doc["serial"]["vacation"] = serial.vacation;
+        doc["serial"]["P1"] = serial.P1;
+        doc["serial"]["alarm"] = serial.alarm;
+        doc["serial"]["fan"] = serial.fan;
+        doc["serial"]["SV1_open"] = serial.SV1_open;
+        doc["serial"]["SV1_close"] = serial.SV1_close;
+
+        doc["GT2"]["raw"] = this->GT2.raw;
+        doc["GT2"]["filtered"] = this->GT2.filtered;
+
+        doc["GT3_2"]["raw"] = this->GT3_2.raw;
+        doc["GT3_2"]["filtered"] = this->GT3_2.filtered;
 
         return doc;
     }

@@ -10,7 +10,8 @@
 #include <DebugLog.h>
 
 #include "IVT490.h"
-#include "SMA.h"
+#include "Controller.h"
+
 
 reactesp::ReactESP app;
 
@@ -25,21 +26,21 @@ Ticker wifiReconnectTimer;
 SoftwareSerial ivtSerial(IVT490_SERIAL_RX);
 bool IVT490_serial_connection_is_initialized = false;
 
-// Global states
-IVT490::IVT490State vp_state;
+// Global state
+struct AppState {
+  IVT490::State ivt490;
+} app_state;
 
-// Thermistor readers and filters
-IVT490::IVT490ThermistorReader<IVT490_ADC_CH0_R0> GT2_reader(IVT490_ADC_CS, 0);
-SMA::Filter<float, IVT490_ADC_CH0_FILTER_WINDOW_COUNT> GT2_filter;
-IVT490::IVT490ThermistorReader<IVT490_ADC_CH1_R0> GT32_reader(IVT490_ADC_CS, 1);
-SMA::Filter<float, IVT490_ADC_CH1_FILTER_WINDOW_COUNT> GT32_filter;
+// Thermistor readers
+IVT490::ThermistorReader GT2_reader(IVT490_ADC_CS, 0, IVT490_ADC_CH0_R0);
+IVT490::ThermistorReader GT3_2_reader(IVT490_ADC_CS, 1, IVT490_ADC_CH1_R0);
 
 // Thermistor emulators
-IVT490::IVT490ThermistorEmulator<IVT490_DIGIPOT_GT2_RESOLUTION, IVT490_DIGIPOT_GT2_MAX_RESISTANCE> GT2_emulator(IVT490_DIGIPOT_GT2_CS);
-IVT490::IVT490ThermistorEmulator<IVT490_DIGIPOT_GT32_RESOLUTION, IVT490_DIGIPOT_GT32_MAX_RESISTANCE> GT32_emulator(IVT490_DIGIPOT_GT32_CS);
+IVT490::ThermistorEmulator GT2_emulator(IVT490_DIGIPOT_GT2_CS, IVT490_DIGIPOT_GT2_RESOLUTION, IVT490_DIGIPOT_GT2_MAX_RESISTANCE);
+IVT490::ThermistorEmulator GT3_2_emulator(IVT490_DIGIPOT_GT32_CS, IVT490_DIGIPOT_GT32_RESOLUTION, IVT490_DIGIPOT_GT32_MAX_RESISTANCE);
 
 // Controller
-IVT490::Controller<GENERAL_CONTROL_VALUES_VALIDITY> controller;
+Controller controller(GENERAL_CONTROL_VALUES_VALIDITY, IVT490_HEATING_CURVE_SLOPE);
 
 void connectToWifi()
 {
@@ -74,6 +75,7 @@ void onMqttConnect(bool sessionPresent)
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/outdoor_temperature_offset").c_str(), 0);
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/feedback/indoor_temperature").c_str(), 0);
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/vacation_mode").c_str(), 0);
+  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/GT3_2_state").c_str(), 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason)
@@ -139,7 +141,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_indoor_temperature_target(value);
   }
-  else if (String(topic).endsWith("/controller/feedback/indoor_temperature"))
+  else if (String(topic).endsWith("/controller/set/indoor_temperature"))
   {
     auto value = String(payload).toFloat();
 
@@ -151,21 +153,25 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_indoor_temperature(value);
   }
-  else if (String(topic).endsWith("/controller/set/GT3_2_state"))
+  else if (String(topic).endsWith("/controller/set/operating_mode"))
   {
     auto value = String(payload).toInt();
 
     if (value == 0)
     {
-      LOG_ERROR("Failed to parse payload as a float");
+      LOG_ERROR("Failed to parse payload as a int");
+      return;
+    }
+    else if (value > 3 || value < 1){
+      LOG_ERROR("Could not cast to an OperatingMode:", value);
       return;
     }
 
-    controller.set_GT3_2_control_state(static_cast<IVT490::GT3_2_ControlState>(value));
+    controller.set_operating_mode(static_cast<OperatingMode>(value));
   }
   else
   {
-    LOG_ERROR("Received MQTT message on topic which we do not know how to handle. This should not happen!");
+    LOG_ERROR("Received MQTT message on topic which we do not know how to handle:", topic);
   }
 }
 
@@ -175,11 +181,11 @@ void onMqttPublish(uint16_t packetId)
   LOG_ERROR("  packetId: ", packetId);
 }
 
-void publish_json_object(String &topic, DynamicJsonDocument &doc)
+void publish_json_object(String &topic, const JsonObject root)
 {
   // Publish the whole state as a single JSON blob
   String json;
-  serializeJson(doc, json);
+  serializeJson(root, json);
 
   LOG_DEBUG(json);
 
@@ -190,16 +196,24 @@ void publish_json_object(String &topic, DynamicJsonDocument &doc)
       json.c_str());
 
   // Publish on individual topics
-  JsonObject root = doc.as<JsonObject>();
   for (auto pair : root)
   {
-    LOG_DEBUG(pair.key().c_str(), pair.value().as<String>());
+    auto key = pair.key().c_str();
+    auto value = pair.value();
+    LOG_DEBUG(key, value.as<String>());
+
+    auto subtopic = (topic + String("/") + key);
+
+    if (value.is<JsonObject>()){
+      publish_json_object(subtopic, value);
+      continue;
+    }
 
     mqttClient.publish(
-        (topic + String("/") + pair.key().c_str()).c_str(),
+        subtopic.c_str(),
         0,
         false,
-        pair.value().as<String>().c_str());
+        value.as<String>().c_str());
   }
 }
 
@@ -236,7 +250,6 @@ void setup()
   connectToWifi();
 
   // Configure controller
-  controller.set_heating_curve_slope(IVT490_HEATING_CURVE_SLOPE);
   controller.set_indoor_temperature_target(20.0);
   controller.set_indoor_temperature_weight(IVT490_INDOOR_TEMPERATURE_FEEDBACK_CONTROL_WEIGHT);
   controller.set_summer_temperature_limit(IVT490_SUMMER_TEMPERATURE_LIMIT);
@@ -244,53 +257,28 @@ void setup()
   // Read ADCs continuously
   app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
                {
-                 LOG_DEBUG("Reading ADC CH0...");
-                 auto value = GT2_reader.read();
-                 LOG_DEBUG("    GT2_sensor: ", value);
-                 auto filtered_value = GT2_filter(value);
-                 LOG_DEBUG("    GT2_sensor (filtered): ", filtered_value);
-                 vp_state.GT2_sensor = filtered_value;
-                 controller.set_outdoor_temperature(filtered_value); });
+                // Read into app_state
+                 GT2_reader.read(app_state.ivt490.GT2);
+                 GT3_2_reader.read(app_state.ivt490.GT3_2);
+                });
 
-  app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
-               {
-                 LOG_DEBUG("Reading ADC CH1...");
-                 auto value = GT32_reader.read();
-                 LOG_DEBUG("    GT3_2_sensor: ", value);
-                 auto filtered_value = GT32_filter(value);
-                 LOG_DEBUG("    GT3_2_sensor (filtered): ", filtered_value);
-                 vp_state.GT3_2_sensor = filtered_value; });
 
   // Run control code
   app.onRepeat(IVT490_CONTROL_INTERVAL, []()
                {
                  LOG_DEBUG("Running control code...");
 
-                 auto [control_value, vacation_mode] = controller.get_control_values();
+                 auto control_values = controller.get_control_values(app_state.ivt490);
 
                  // Control feed temperature
-                 GT2_emulator.set_target_value(control_value);
+                 GT2_emulator.set_target_value(control_values.GT2);
 
                  // Make sure EXT_IN relay is in correct position
-                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, vacation_mode);
+                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, control_values.enable_vacation_mode);
 
                  // Control boiler (GT3_2 emulator)
-                 switch (controller.get_GT3_2_control_state())
-                 {
-                 case IVT490::GT3_2_ControlState::BLOCK:
-                  // TODO
-                  break;
-
-                 case IVT490::GT3_2_ControlState::BOOST:
-                  // TODO
-                  break;
-
-                 case IVT490::GT3_2_ControlState::BAU:
-                 default:
-                  GT32_emulator.set_target_value(vp_state.GT3_2_sensor);
-                  break;
-
-                 } });
+                  GT3_2_emulator.set_target_value(control_values.GT3_2);
+ });
 
   // Serial listener to IVT490
   app.onAvailable(ivtSerial, []()
@@ -300,12 +288,12 @@ void setup()
 
                     LOG_INFO("Publishing raw output to MQTT broker...");
                     mqttClient.publish(
-                        (MQTT_BASE_TOPIC + String("/state/raw")).c_str(),
+                        (MQTT_BASE_TOPIC + String("/ivt490/raw")).c_str(),
                         0,
                         false,
                         raw.c_str());
 
-                    if (parse_IVT490(raw, vp_state) < 0)
+                    if (parse_serial(raw, app_state.ivt490.serial) < 0)
                     {
                       LOG_ERROR("Failed parsing serial message from IVT490!");
                       return;
@@ -321,22 +309,24 @@ void setup()
                                       LOG_INFO("Publishing to MQTT broker...");
 
                                       // IVT490 state
-                                      auto doc = IVT490::serialize_IVT490State(vp_state);
-                                      auto topic = MQTT_BASE_TOPIC + String("/state");
-                                      publish_json_object(topic, doc);
+                                      auto doc = app_state.ivt490.serialize();
+                                      auto topic = MQTT_BASE_TOPIC + String("/ivt490/state");
+                                      auto object = doc.as<JsonObject>();
+                                      publish_json_object(topic, object);
 
                                       doc.clear();
 
                                       // Controller state
                                       doc = controller.serialize();
                                       topic = MQTT_BASE_TOPIC + String("/controller/state");
-                                      publish_json_object(topic, doc);
+                                      object = doc.as<JsonObject>();
+                                      publish_json_object(topic, object);
                                       });
                     }
 
                     LOG_INFO("Adjusting thermistor emulator corrections");
-                    GT2_emulator.adjust_correction(vp_state.GT2_heatpump);
-                    GT32_emulator.adjust_correction(vp_state.GT3_2_heatpump); });
+                    GT2_emulator.adjust_correction(app_state.ivt490.serial.GT2);
+                    GT3_2_emulator.adjust_correction(app_state.ivt490.serial.GT3_2); });
 
   // Configure OTA
   ArduinoOTA.setHostname(OTA_HOSTNAME);
