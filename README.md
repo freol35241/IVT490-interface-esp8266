@@ -15,9 +15,13 @@ As such, it is possible to emulate input to the IVT490 controller board. The def
 
 Currently, the software and hardware supports to emulate the following temperature sensors:
 
-* GT2 (outdoor temperature sensor).
+* GT2 (outdoor temperature sensor)
 
   This allows for controlling the target feed temperature (GT1_target) of the heating system through knowledge of the heating curve used by the heatpump.
+
+* GT3:2 (boiler temperature)
+
+  This allows for explicitly controlling when the compressor will be active, either by conducting Business as usual, blocking operation or boosting operation.
 
 
 ## Hardware
@@ -27,7 +31,8 @@ BOM:
 - Wemos D1 mini (Other esp8266-based boards should probably be fine but will obviously require adjustments to the wiring)
 - MCP3208 (or a similar one with fewer channels, all wiring schematics are shown using this particular one and may have to be adjusted if exchanged)
 - MCP41100
-- 10kOhm resistor
+- MCP41010
+- 10kOhm resistors (2 pcs)
 - 3v3 relay
 
 Schematic:
@@ -46,7 +51,9 @@ All pre-deployment configuration of the software in this repository is done usin
 
 2. Intersect the GT2 sensor cabling and connect the [Hardware](#hardware) as a "man-in-the-middle".
 
-3. Connect the 3v3 relay to the `EXT_IN` port on the heatpump control board.
+3. Interest the GT3:2 sensor caling and the connect the [Hardware](#hardware) as a "man-in-the-middle".
+
+4. Connect the 3v3 relay to the `EXT_IN` port on the heatpump control board.
 
 ## API
 
@@ -54,11 +61,15 @@ All communication during runtime happens via MQTT.
 
 The interface publishes data at 10 second intervals according to:
 
-* `{MQTT_BASE_TOPIC}/state`
+* `{MQTT_BASE_TOPIC}/ivt490`
+
+  The raw text payload received on the serial debug connection from the IVT490 heatpump.
+
+* `{MQTT_BASE_TOPIC}/ivt490/state`
 
   A JSON blob consisting of the full state of IVT490 heatpump
 
-* `{MQTT_BASE_TOPIC}/state/{parameter}`
+* `{MQTT_BASE_TOPIC}/ivt490/state/{parameter}`
 
   All parameters in the state are also published onto individual topics as floats/ints/bools.
 
@@ -86,11 +97,11 @@ The controler listens for control commands according to:
 
 The controller also listens to feedback according to:
 
-* `{MQTT_BASE_TOPIC}/controller/feedback/indoor_temperature`
+* `{MQTT_BASE_TOPIC}/controller/set/indoor_temperature_actual`
 
   Indoor temperature feedback for the controller.
 
-* `{MQTT_BASE_TOPIC}/controller/set/GT3_2_state`
+* `{MQTT_BASE_TOPIC}/controller/set/operating_mode`
 
   Operating state for the GT3_2 emulator, can be one of:
 

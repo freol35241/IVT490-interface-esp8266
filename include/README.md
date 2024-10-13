@@ -35,7 +35,7 @@ More specifically, this project requires a header file named `config.h` to be pl
 #define IVT490_DIGIPOT_GT2_MAX_RESISTANCE 100000 // Ohms
 #define IVT490_DIGIPOT_GT32_CS 2                  // D4
 #define IVT490_DIGIPOT_GT32_RESOLUTION 8           // bits
-#define IVT490_DIGIPOT_GT32_MAX_RESISTANCE 100000 // Ohms
+#define IVT490_DIGIPOT_GT32_MAX_RESISTANCE 10000 // Ohms
 #define IVT490_CONTROL_INTERVAL 1000         // milliseconds
 #define IVT490_EXT_IN_RELAY_PIN 6            // D??
 #define IVT490_INDOOR_TEMPERATURE_FEEDBACK_CONTROL_WEIGHT 10
