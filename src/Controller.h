@@ -107,14 +107,17 @@ public:
         control_values.enable_vacation_mode = false;
 
         // GT3_2
-        if (operating_mode == OperatingMode::BAU){
-            control_values.GT3_2 = state.GT3_2.filtered;
-        }
-        else if (operating_mode == OperatingMode::BLOCK){
+        // if (operating_mode == OperatingMode::BAU)
+        control_values.GT3_2 = state.GT3_2.filtered;
+        
+        if (operating_mode == OperatingMode::BLOCK){
             control_values.GT3_2 = state.serial.GT3_2_ULT + 1.0;
         }
         else if (operating_mode == OperatingMode::BOOST){
-            control_values.GT3_2 = state.serial.GT3_2_LL - 1.0;
+            // We only allow BOOSTING if the boiler temperature is lower than the upper limit
+            if (state.GT3_2.filtered < state.serial.GT3_2_ULT){
+                control_values.GT3_2 = state.serial.GT3_2_LL - 1.0;
+            }
         }
 
 
