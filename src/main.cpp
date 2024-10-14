@@ -141,7 +141,7 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_indoor_temperature_target(value);
   }
-  else if (String(topic).endsWith("/controller/set/indoor_temperature"))
+  else if (String(topic).endsWith("/controller/set/indoor_temperature_actual"))
   {
     auto value = String(payload).toFloat();
 
