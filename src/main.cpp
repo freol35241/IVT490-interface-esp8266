@@ -72,10 +72,9 @@ void onMqttConnect(bool sessionPresent)
   LOG_INFO("Connected to MQTT.");
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/feed_temperature_target").c_str(), 0);
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/indoor_temperature_target").c_str(), 0);
+  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/indoor_temperature_actual").c_str(), 0);
   mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/outdoor_temperature_offset").c_str(), 0);
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/feedback/indoor_temperature").c_str(), 0);
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/vacation_mode").c_str(), 0);
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/GT3_2_state").c_str(), 0);
+  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/operating_mode").c_str(), 0);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason)
