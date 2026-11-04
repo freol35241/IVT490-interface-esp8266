@@ -25,6 +25,7 @@ jobs:
         #define WIFI_PW "DUMMY"
 
         #define OTA_HOSTNAME "DUMMY"
+        #define OTA_PASSWORD "DUMMY"
 
         #define MQTT_HOST IPAddress(10, 10, 10, 10)
         #define MQTT_PORT 10

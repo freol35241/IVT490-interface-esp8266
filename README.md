@@ -117,3 +117,18 @@ Clone (or fork and clone) this repository.
 
 Assemble the hardware according to the [Hardware](#hardware) section and configure the software according to the [Software](#software) section. Then build the software using PlatformIO and upload to your board.
 
+
+### Updating over the network
+
+The first upload goes over USB. After that the board takes new firmware over WiFi, both ways guarded by `OTA_PASSWORD` (required in `config.h`):
+
+- **HTTP**, started by the uploading host, so it works wherever the board's port 80 is reachable:
+
+  ```bash
+  pio run
+  curl -u "admin:$OTA_PASSWORD" -F "firmware=@.pio/build/d1_mini_lite/firmware.bin" http://<board-ip>/update
+  ```
+
+  The board answers `Update Success! Rebooting...` and restarts on the new image. A failed upload leaves the running firmware in place.
+
+- **ArduinoOTA**, via the `d1_mini_lite_ota` environment (`pio run -e d1_mini_lite_ota -t upload --upload-port <board-ip>`). Here the board connects back to the uploading host, so it fails when a firewall sits between the two.
