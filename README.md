@@ -77,7 +77,7 @@ All communication during runtime happens via MQTT. Every topic below starts with
 
 * `{MQTT_BASE_TOPIC}/controller/state`
 
-  A JSON blob with the state of the software controller, published right after `ivt490/state`: `feed_temperature_target`, `indoor_temperature_feedback` and `outdoor_temperature_offset` (each as `value` and `valid`), `indoor_temperature_target` (`value`) and `operating_mode`.
+  A JSON blob with the state of the software controller, published right after `ivt490/state`: `feed_temperature_target`, `indoor_temperature_feedback`, `outdoor_temperature_offset` and `operating_mode` (each as `value` and `valid`), and `indoor_temperature_target` (`value`).
 
 * Every member of both blobs is also published on its own topic, following the nesting, e.g. `{MQTT_BASE_TOPIC}/ivt490/state/serial/GT1`, `{MQTT_BASE_TOPIC}/ivt490/state/GT2/filtered` or `{MQTT_BASE_TOPIC}/controller/state/outdoor_temperature_offset/valid`. Each nested object also gets a blob of its own (e.g. `{MQTT_BASE_TOPIC}/ivt490/state/serial`).
 
@@ -99,7 +99,7 @@ All communication during runtime happens via MQTT. Every topic below starts with
 
 ### Commands
 
-The controller subscribes to the following, each taking a plain number as its payload. **A payload that parses as 0 is rejected**, so none of these can be set to exactly 0.
+The controller subscribes to the following, each taking a plain number as its payload (surrounding whitespace is allowed). Anything else is ignored: an empty payload, trailing text, NaN or infinity, or more than 31 bytes.
 
 * `{MQTT_BASE_TOPIC}/controller/set/feed_temperature_target`
 
@@ -125,13 +125,13 @@ The controller subscribes to the following, each taking a plain number as its pa
   * 2, Block: the heat pump is shown a boiler temperature 1 °C above its upper limit (`GT3_2_UL`), so it does not start heating the boiler.
   * 3, Boost: while the real boiler temperature is below `GT3_2_UL`, the heat pump is shown 1 °C below its lower limit (`GT3_2_LL`), so it starts heating the boiler. At or above the upper limit the real temperature is passed through.
 
-  1 until set.
+  1 until set, and 1 again once the mode has expired (see Validity).
 
 #### Validity
 
-`feed_temperature_target`, `outdoor_temperature_offset` and `indoor_temperature_actual` are valid for `GENERAL_CONTROL_VALUES_VALIDITY` after they were last received, and the controller falls back to the real sensor values once they expire. To keep one in force, publish it repeatedly, even if it does not change.
+`feed_temperature_target`, `outdoor_temperature_offset`, `indoor_temperature_actual` and `operating_mode` are valid for `GENERAL_CONTROL_VALUES_VALIDITY` after they were last received, and the controller falls back to the real sensor values (for `operating_mode`: Business as usual) once they expire. To keep one in force, publish it repeatedly, even if it does not change.
 
-`indoor_temperature_target` and `operating_mode` do **not** expire: they hold until a new value arrives or the board restarts, which it does at least daily (`DAILY_RESTART_INTERVAL`) and after `CONNECTIVITY_WATCHDOG_TIMEOUT` without Wi-Fi or MQTT. Both return to their defaults on restart.
+`indoor_temperature_target` does **not** expire: it holds until a new value arrives or the board restarts, which it does at least daily (`DAILY_RESTART_INTERVAL`) and after `CONNECTIVITY_WATCHDOG_TIMEOUT` without Wi-Fi or MQTT, and returns to its default on restart. It only has an effect while `indoor_temperature_actual` is valid.
 
 #### Summer limit and vacation mode
 

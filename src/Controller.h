@@ -78,6 +78,14 @@ public:
         this->operating_mode_last_updated = millis();
     }
 
+    // Like the other timestamped inputs: a mode its sender stopped repeating
+    // expires, and the controller falls back to BAU. Without this, a BLOCK
+    // outlived whatever set it until the next restart (issue #36).
+    bool operating_mode_is_valid()
+    {
+        return (millis() - this->operating_mode_last_updated <= this->validity && this->operating_mode_last_updated != 0);
+    }
+
     std::pair<float, bool> vacation_mode_logic(float outdoor_temperature, float control_value)
     {
         if (this->summer_temperature_limit > 0 && outdoor_temperature < 1.0 && control_value >= this->summer_temperature_limit - 1)
@@ -106,14 +114,14 @@ public:
         ControlValues control_values;
         control_values.enable_vacation_mode = false;
 
-        // GT3_2
-        // if (operating_mode == OperatingMode::BAU)
+        // GT3_2: the real boiler temperature (BAU) unless a valid mode says otherwise
         control_values.GT3_2 = state.GT3_2.filtered;
-        
-        if (operating_mode == OperatingMode::BLOCK){
+        OperatingMode mode = operating_mode_is_valid() ? this->operating_mode : OperatingMode::BAU;
+
+        if (mode == OperatingMode::BLOCK){
             control_values.GT3_2 = state.serial.GT3_2_UL + 1.0;
         }
-        else if (operating_mode == OperatingMode::BOOST){
+        else if (mode == OperatingMode::BOOST){
             // We only allow BOOSTING if the boiler temperature is lower than the upper limit
             if (state.GT3_2.filtered < state.serial.GT3_2_UL){
                 control_values.GT3_2 = state.serial.GT3_2_LL - 1.0;
@@ -167,8 +175,8 @@ public:
 
 
     // Object members serialize() writes: 5 at the root, 2 in each of the
-    // three value/valid pairs and 1 in indoor_temperature_target.
-    static constexpr size_t STATE_DOC_SLOTS = 5 + 3 * 2 + 1;
+    // four value/valid pairs and 1 in indoor_temperature_target.
+    static constexpr size_t STATE_DOC_SLOTS = 5 + 4 * 2 + 1;
 
     // Fills `doc` (cleared first).
     void serialize(JsonDocument &doc)
@@ -186,7 +194,8 @@ public:
 
         doc["indoor_temperature_target"]["value"] = this->indoor_temperature_target;
 
-        doc["operating_mode"] = this->operating_mode;
+        doc["operating_mode"]["value"] = this->operating_mode;
+        doc["operating_mode"]["valid"] = this->operating_mode_is_valid();
     }
 
 private:

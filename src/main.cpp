@@ -188,83 +188,91 @@ bool topic_ends_with(const char *topic, const char *suffix)
   return topic_len >= suffix_len && strcmp(topic + topic_len - suffix_len, suffix) == 0;
 }
 
+// Parse a whole payload as a number. False for an empty payload, trailing
+// garbage, or (for floats) NaN/inf. atof()/atol() returned 0 for all of those,
+// so 0 used to be rejected as a parse failure, and a real 0 with it (issue
+// #37): an outdoor_temperature_offset of 0 was dropped and the previous offset
+// stayed until it expired.
+bool parse_float(const char *text, float &out)
+{
+  char *end;
+  float value = strtof(text, &end);
+  if (end == text) // nothing converted; checked before the skip below moves `end`
+    return false;
+  while (isspace((unsigned char)*end))
+    end++;
+  if (*end != '\0' || !isfinite(value))
+    return false;
+  out = value;
+  return true;
+}
+
+bool parse_long(const char *text, long &out)
+{
+  char *end;
+  long value = strtol(text, &end, 10);
+  if (end == text) // nothing converted; checked before the skip below moves `end`
+    return false;
+  while (isspace((unsigned char)*end))
+    end++;
+  if (*end != '\0')
+    return false;
+  out = value;
+  return true;
+}
+
 void onMqttMessage(char *topic, byte *payload_bytes, unsigned int length)
 {
   LOG_INFO("MQTT message received on topic: ", topic);
   LOG_DEBUG("  len: ", length);
 
   // PubSubClient's payload is not NUL-terminated. Every value handled here is
-  // a short number, so a bounded copy is enough.
+  // a short number; anything that does not fit is not one, and is rejected
+  // rather than parsed from its first 31 bytes.
   char payload[32];
-  size_t n = length < sizeof(payload) - 1 ? length : sizeof(payload) - 1;
-  memcpy(payload, payload_bytes, n);
-  payload[n] = '\0';
-
-  // A value of 0 is rejected below as a parse failure, as before: String's
-  // toFloat()/toInt(), which this replaces, return 0 for unparseable input.
-  if (topic_ends_with(topic, "/controller/set/feed_temperature_target"))
+  if (length >= sizeof(payload))
   {
-    float value = atof(payload);
+    LOG_ERROR("Payload too long, ignored on topic: ", topic);
+    return;
+  }
+  memcpy(payload, payload_bytes, length);
+  payload[length] = '\0';
 
-    if (value == 0)
+  float value;
+  if (topic_ends_with(topic, "/controller/set/operating_mode"))
+  {
+    long mode;
+    if (!parse_long(payload, mode))
     {
-      LOG_ERROR("Failed to parse payload as a float");
+      LOG_ERROR("Failed to parse payload as an int");
       return;
     }
-
+    if (mode > 3 || mode < 1)
+    {
+      LOG_ERROR("Could not cast to an OperatingMode:", mode);
+      return;
+    }
+    controller.set_operating_mode(static_cast<OperatingMode>(mode));
+  }
+  else if (!parse_float(payload, value))
+  {
+    LOG_ERROR("Failed to parse payload as a float on topic: ", topic);
+  }
+  else if (topic_ends_with(topic, "/controller/set/feed_temperature_target"))
+  {
     controller.set_feed_temperature_target(value);
   }
   else if (topic_ends_with(topic, "/controller/set/outdoor_temperature_offset"))
   {
-    float value = atof(payload);
-
-    if (value == 0)
-    {
-      LOG_ERROR("Failed to parse payload as a float");
-      return;
-    }
-
     controller.set_outdoor_temperature_offset(value);
   }
   else if (topic_ends_with(topic, "/controller/set/indoor_temperature_target"))
   {
-    float value = atof(payload);
-
-    if (value == 0)
-    {
-      LOG_ERROR("Failed to parse payload as a float");
-      return;
-    }
-
     controller.set_indoor_temperature_target(value);
   }
   else if (topic_ends_with(topic, "/controller/set/indoor_temperature_actual"))
   {
-    float value = atof(payload);
-
-    if (value == 0)
-    {
-      LOG_ERROR("Failed to parse payload as a float");
-      return;
-    }
-
     controller.set_indoor_temperature(value);
-  }
-  else if (topic_ends_with(topic, "/controller/set/operating_mode"))
-  {
-    long value = atol(payload);
-
-    if (value == 0)
-    {
-      LOG_ERROR("Failed to parse payload as a int");
-      return;
-    }
-    else if (value > 3 || value < 1){
-      LOG_ERROR("Could not cast to an OperatingMode:", value);
-      return;
-    }
-
-    controller.set_operating_mode(static_cast<OperatingMode>(value));
   }
   else
   {
