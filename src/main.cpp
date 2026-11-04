@@ -4,39 +4,116 @@
 #include <ESP8266WiFi.h>
 #include <Ticker.h>
 #include <ReactESP.h>
-#include <AsyncMqttClient.h>
+#include <PubSubClient.h>
 #include <SoftwareSerial.h>
 #include <ArduinoJson.h>
 #include <DebugLog.h>
 
 #include "IVT490.h"
-#include "SMA.h"
+#include "Controller.h"
+
+// MQTT robustness settings. Each can be overridden in config.h.
+//
+// PubSubClient builds every packet whole in this buffer before writing it,
+// which is the point of using it: AsyncMqttClient wrote packets into the TCP
+// send buffer piecemeal, and a reconnect's SUBSCRIBE could land inside a
+// half-written PUBLISH (issue #29). The buffer must hold the largest packet:
+// the whole-document /ivt490/state blob plus its topic.
+#ifndef MQTT_BUFFER_SIZE
+#define MQTT_BUFFER_SIZE 2048
+#endif
+#ifndef MQTT_KEEPALIVE_S
+#define MQTT_KEEPALIVE_S 15 // AsyncMqttClient's default, kept
+#endif
+#ifndef MQTT_RECONNECT_INTERVAL
+#define MQTT_RECONNECT_INTERVAL 5000 // milliseconds between connection attempts
+#endif
+// Restart if Wi-Fi or MQTT has been down this long. Checked from loop() with
+// millis(), so it does not depend on the ReactESP scheduler.
+#ifndef CONNECTIVITY_WATCHDOG_TIMEOUT
+#define CONNECTIVITY_WATCHDOG_TIMEOUT (5UL * 60 * 1000) // milliseconds
+#endif
+// The daily restart, now checked from loop() as well.
+#ifndef DAILY_RESTART_INTERVAL
+#define DAILY_RESTART_INTERVAL (24UL * 3600 * 1000) // milliseconds
+#endif
+#ifndef DIAGNOSTICS_PUBLISH_INTERVAL
+#define DIAGNOSTICS_PUBLISH_INTERVAL 60000 // milliseconds
+#endif
 
 reactesp::ReactESP app;
 
-AsyncMqttClient mqttClient;
-Ticker mqttReconnectTimer;
+WiFiClient wifiClient;
+PubSubClient mqttClient(wifiClient);
 
 WiFiEventHandler wifiConnectHandler;
 WiFiEventHandler wifiDisconnectHandler;
 Ticker wifiReconnectTimer;
 
+// Topic prefix and client id, built once. MQTT_BASE_TOPIC is a String in
+// config.h; copying it here keeps config.h unchanged.
+char base_topic[96];
+char client_id[24];
+
+// Connection bookkeeping
+uint32_t last_mqtt_attempt = 0;
+uint32_t last_connected = 0;
+uint32_t mqtt_connects = 0;
+uint32_t publish_failures = 0;
+uint32_t oversize_skips = 0;
+
 // IVT490 serial connection
 SoftwareSerial ivtSerial(IVT490_SERIAL_RX);
 bool IVT490_serial_connection_is_initialized = false;
 
-// Global states
-IVT490::IVT490State vp_state;
+// Global state
+struct AppState {
+  IVT490::State ivt490;
+} app_state;
 
-// Thermistor reader
-IVT490::IVT490ThermistorReader<IVT490_ADC_R0> GT2_reader(IVT490_ADC_CS, 0);
-SMA::Filter<float, IVT490_ADC_FILTER_WINDOW_COUNT> filter;
+// Thermistor readers
+IVT490::ThermistorReader GT2_reader(IVT490_ADC_CS, 0, IVT490_ADC_CH0_R0);
+IVT490::ThermistorReader GT3_2_reader(IVT490_ADC_CS, 1, IVT490_ADC_CH1_R0);
 
-// Thermistor emulator
-IVT490::IVT490ThermistorEmulator<IVT490_DIGPOT_RESOLUTION, IVT490_DIGIPOT_MAX_RESISTANCE> GT2_emulator(IVT490_DIGIPOT_CS);
+// Thermistor emulators
+IVT490::ThermistorEmulator GT2_emulator(IVT490_DIGIPOT_GT2_CS, IVT490_DIGIPOT_GT2_RESOLUTION, IVT490_DIGIPOT_GT2_MAX_RESISTANCE);
+IVT490::ThermistorEmulator GT3_2_emulator(IVT490_DIGIPOT_GT32_CS, IVT490_DIGIPOT_GT32_RESOLUTION, IVT490_DIGIPOT_GT32_MAX_RESISTANCE);
 
 // Controller
-IVT490::Controller<GENERAL_CONTROL_VALUES_VALIDITY> controller;
+Controller controller(GENERAL_CONTROL_VALUES_VALIDITY, IVT490_HEATING_CURVE_SLOPE);
+
+// Publish one whole packet, or nothing.
+//
+// PubSubClient refuses an oversize packet before writing anything, so that
+// case is checked here and skipped. Any other failure means the write to the
+// socket fell short. The stream may then hold part of a packet, so the
+// connection is dropped and rebuilt rather than written to again: the broker
+// discards a partial packet when the connection closes, instead of reading
+// the next packet as its tail.
+bool mqtt_publish(const char *topic, const char *payload, bool retained = false)
+{
+  if (!mqttClient.connected())
+  {
+    return false;
+  }
+
+  size_t needed = 5 + 2 + strlen(topic) + strlen(payload); // header + topic length + topic + payload
+  if (needed > MQTT_BUFFER_SIZE)
+  {
+    oversize_skips++;
+    LOG_ERROR("Skipping publish larger than MQTT_BUFFER_SIZE on topic: ", topic);
+    return false;
+  }
+
+  if (!mqttClient.publish(topic, payload, retained))
+  {
+    publish_failures++;
+    LOG_ERROR("Publish failed, dropping the connection to resync: ", topic);
+    mqttClient.disconnect();
+    return false;
+  }
+  return true;
+}
 
 void connectToWifi()
 {
@@ -44,65 +121,69 @@ void connectToWifi()
   WiFi.begin(WIFI_SSID, WIFI_PW);
 }
 
-void connectToMqtt()
-{
-  LOG_INFO("Connecting to MQTT...");
-  mqttClient.connect();
-}
-
 void onWifiConnect(const WiFiEventStationModeGotIP &event)
 {
   LOG_INFO("Connected to Wi-Fi.");
-  connectToMqtt();
+  last_mqtt_attempt = 0; // connect to MQTT at the next loop() rather than waiting
 }
 
 void onWifiDisconnect(const WiFiEventStationModeDisconnected &event)
 {
   LOG_INFO("Disconnected from Wi-Fi.");
-  mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
   wifiReconnectTimer.once(2, connectToWifi);
 }
 
-void onMqttConnect(bool sessionPresent)
+void subscribe(const char *suffix)
 {
-  LOG_INFO("Connected to MQTT.");
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/feed_temperature_target").c_str(), 0);
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/indoor_temperature_target").c_str(), 0);
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/outdoor_temperature_offset").c_str(), 0);
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/feedback/indoor_temperature").c_str(), 0);
-  mqttClient.subscribe((MQTT_BASE_TOPIC + "/controller/set/vacation_mode").c_str(), 0);
+  char topic[160];
+  snprintf(topic, sizeof(topic), "%s%s", base_topic, suffix);
+  mqttClient.subscribe(topic, 0);
 }
 
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason)
+// Called from loop(), never from a callback, so nothing else can be writing
+// to the socket while the connection and its subscriptions are set up.
+void connectToMqtt()
 {
-  LOG_INFO("Disconnected from MQTT.");
-
-  if (WiFi.isConnected())
+  LOG_INFO("Connecting to MQTT...");
+  if (!mqttClient.connect(client_id, MQTT_USER, MQTT_PW))
   {
-    mqttReconnectTimer.once(2, connectToMqtt);
+    LOG_ERROR("MQTT connection failed, state: ", mqttClient.state());
+    return;
   }
+
+  mqtt_connects++;
+  LOG_INFO("Connected to MQTT.");
+  subscribe("/controller/set/feed_temperature_target");
+  subscribe("/controller/set/indoor_temperature_target");
+  subscribe("/controller/set/indoor_temperature_actual");
+  subscribe("/controller/set/outdoor_temperature_offset");
+  subscribe("/controller/set/operating_mode");
 }
 
-void onMqttSubscribe(uint16_t packetId, uint8_t qos)
+bool topic_ends_with(const char *topic, const char *suffix)
 {
-  LOG_INFO("Subscribe acknowledged.");
-  LOG_DEBUG("  packetId: ", packetId);
-  LOG_DEBUG("  qos: ", qos);
+  size_t topic_len = strlen(topic);
+  size_t suffix_len = strlen(suffix);
+  return topic_len >= suffix_len && strcmp(topic + topic_len - suffix_len, suffix) == 0;
 }
 
-void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total)
+void onMqttMessage(char *topic, byte *payload_bytes, unsigned int length)
 {
   LOG_INFO("MQTT message received on topic: ", topic);
-  LOG_DEBUG("  qos: ", properties.qos);
-  LOG_DEBUG("  dup: ", properties.dup);
-  LOG_DEBUG("  retain: ", properties.retain);
-  LOG_DEBUG("  len: ", len);
-  LOG_DEBUG("  index: ", index);
-  LOG_DEBUG("  total: ", total);
+  LOG_DEBUG("  len: ", length);
 
-  if (String(topic).endsWith("/controller/set/feed_temperature_target"))
+  // PubSubClient's payload is not NUL-terminated. Every value handled here is
+  // a short number, so a bounded copy is enough.
+  char payload[32];
+  size_t n = length < sizeof(payload) - 1 ? length : sizeof(payload) - 1;
+  memcpy(payload, payload_bytes, n);
+  payload[n] = '\0';
+
+  // A value of 0 is rejected below as a parse failure, as before: String's
+  // toFloat()/toInt(), which this replaces, return 0 for unparseable input.
+  if (topic_ends_with(topic, "/controller/set/feed_temperature_target"))
   {
-    auto value = String(payload).toFloat();
+    float value = atof(payload);
 
     if (value == 0)
     {
@@ -112,9 +193,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_feed_temperature_target(value);
   }
-  else if (String(topic).endsWith("/controller/set/outdoor_temperature_offset"))
+  else if (topic_ends_with(topic, "/controller/set/outdoor_temperature_offset"))
   {
-    auto value = String(payload).toFloat();
+    float value = atof(payload);
 
     if (value == 0)
     {
@@ -124,9 +205,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_outdoor_temperature_offset(value);
   }
-  else if (String(topic).endsWith("/controller/set/indoor_temperature_target"))
+  else if (topic_ends_with(topic, "/controller/set/indoor_temperature_target"))
   {
-    auto value = String(payload).toFloat();
+    float value = atof(payload);
 
     if (value == 0)
     {
@@ -136,9 +217,9 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_indoor_temperature_target(value);
   }
-  else if (String(topic).endsWith("/controller/feedback/indoor_temperature"))
+  else if (topic_ends_with(topic, "/controller/set/indoor_temperature_actual"))
   {
-    auto value = String(payload).toFloat();
+    float value = atof(payload);
 
     if (value == 0)
     {
@@ -148,44 +229,135 @@ void onMqttMessage(char *topic, char *payload, AsyncMqttClientMessageProperties 
 
     controller.set_indoor_temperature(value);
   }
+  else if (topic_ends_with(topic, "/controller/set/operating_mode"))
+  {
+    long value = atol(payload);
+
+    if (value == 0)
+    {
+      LOG_ERROR("Failed to parse payload as a int");
+      return;
+    }
+    else if (value > 3 || value < 1){
+      LOG_ERROR("Could not cast to an OperatingMode:", value);
+      return;
+    }
+
+    controller.set_operating_mode(static_cast<OperatingMode>(value));
+  }
   else
   {
-    LOG_ERROR("Received MQTT message on topic which we do not know how to handle. This should not happen!");
+    LOG_ERROR("Received MQTT message on topic which we do not know how to handle:", topic);
   }
 }
 
-void onMqttPublish(uint16_t packetId)
-{
-  LOG_INFO("Publish acknowledged.");
-  LOG_ERROR("  packetId: ", packetId);
-}
+// The whole-document blob for the outermost call. Static so it is not a
+// fresh heap allocation every publish interval.
+char json_buffer[MQTT_BUFFER_SIZE];
 
-void publish_json_object(String &topic, DynamicJsonDocument &doc)
+// Publish `root` as one JSON blob on `topic`, then each leaf on its own
+// subtopic, recursing into nested objects (which also get their own blob).
+// The topic tree and the payload text are unchanged from the String-based
+// version: serializeJson() of a number or bool gives the same text as
+// JsonVariant::as<String>() did.
+//
+// `topic` is a buffer of `capacity` bytes; subtopics are appended in place
+// and the original length restored afterwards, so no String is built.
+void publish_json_object(char *topic, size_t capacity, const JsonObject root)
 {
+  if (!mqttClient.connected())
+  {
+    return;
+  }
+
   // Publish the whole state as a single JSON blob
-  String json;
-  serializeJson(doc, json);
-
-  LOG_DEBUG(json);
-
-  mqttClient.publish(
-      (topic).c_str(),
-      0,
-      false,
-      json.c_str());
+  if (measureJson(root) < sizeof(json_buffer))
+  {
+    serializeJson(root, json_buffer, sizeof(json_buffer));
+    LOG_DEBUG(json_buffer);
+    mqtt_publish(topic, json_buffer);
+  }
+  else
+  {
+    oversize_skips++;
+    LOG_ERROR("Skipping JSON blob larger than its buffer on topic: ", topic);
+  }
 
   // Publish on individual topics
-  JsonObject root = doc.as<JsonObject>();
+  size_t topic_len = strlen(topic);
+  char value_text[32];
   for (auto pair : root)
   {
-    LOG_DEBUG(pair.key().c_str(), pair.value().as<String>());
+    if (!mqttClient.connected())
+    {
+      break; // a failed publish dropped the connection; the rest would fail too
+    }
 
-    mqttClient.publish(
-        (topic + String("/") + pair.key().c_str()).c_str(),
-        0,
-        false,
-        pair.value().as<String>().c_str());
+    const char *key = pair.key().c_str();
+    auto value = pair.value();
+
+    int written = snprintf(topic + topic_len, capacity - topic_len, "/%s", key);
+    if (written < 0 || (size_t)written >= capacity - topic_len)
+    {
+      topic[topic_len] = '\0';
+      LOG_ERROR("Subtopic too long, skipped: ", key);
+      continue;
+    }
+
+    if (value.is<JsonObject>())
+    {
+      publish_json_object(topic, capacity, value.as<JsonObject>());
+    }
+    else
+    {
+      serializeJson(value, value_text, sizeof(value_text));
+      LOG_DEBUG(key, value_text);
+      mqtt_publish(topic, value_text);
+    }
+
+    topic[topic_len] = '\0';
   }
+}
+
+// Board health, on its own subtree so nothing that reads ivt490/state or
+// controller/state sees it. Free heap and fragmentation are what issue #29
+// needs to see; reset_reason says whether a restart was ours.
+void publish_diagnostics()
+{
+  if (!mqttClient.connected())
+  {
+    return;
+  }
+
+  char topic[160];
+  char value[48];
+  struct
+  {
+    const char *name;
+    uint32_t value;
+  } numbers[] = {
+      {"free_heap", ESP.getFreeHeap()},
+      {"max_free_block", ESP.getMaxFreeBlockSize()},
+      {"heap_fragmentation", ESP.getHeapFragmentation()},
+      {"uptime_s", millis() / 1000},
+      {"mqtt_connects", mqtt_connects},
+      {"publish_failures", publish_failures},
+      {"oversize_skips", oversize_skips},
+  };
+  for (auto &n : numbers)
+  {
+    snprintf(topic, sizeof(topic), "%s/diagnostics/%s", base_topic, n.name);
+    snprintf(value, sizeof(value), "%lu", (unsigned long)n.value);
+    mqtt_publish(topic, value);
+  }
+
+  snprintf(topic, sizeof(topic), "%s/diagnostics/wifi_rssi", base_topic);
+  snprintf(value, sizeof(value), "%d", WiFi.RSSI());
+  mqtt_publish(topic, value);
+
+  snprintf(topic, sizeof(topic), "%s/diagnostics/reset_reason", base_topic);
+  strlcpy(value, ESP.getResetReason().c_str(), sizeof(value));
+  mqtt_publish(topic, value);
 }
 
 void setup()
@@ -196,6 +368,10 @@ void setup()
   pinMode(IVT490_EXT_IN_RELAY_PIN, OUTPUT);
   digitalWrite(IVT490_EXT_IN_RELAY_PIN, LOW);
 
+  strlcpy(base_topic, String(MQTT_BASE_TOPIC).c_str(), sizeof(base_topic));
+  // The id AsyncMqttClient generated, so the broker sees the same client.
+  snprintf(client_id, sizeof(client_id), "esp8266-%06x", ESP.getChipId());
+
   // IVT490 serial connection
   // Baud rate = 9600
   // IVT490 should output every 60th second
@@ -205,23 +381,19 @@ void setup()
   wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
   wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
 
-  // MQTT handlers
-  mqttClient.onConnect(onMqttConnect);
-  mqttClient.onDisconnect(onMqttDisconnect);
-  mqttClient.onSubscribe(onMqttSubscribe);
-  mqttClient.onMessage(onMqttMessage);
-  mqttClient.onPublish(onMqttPublish);
-
-  // Set connection details
+  // MQTT
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setCallback(onMqttMessage);
+  mqttClient.setKeepAlive(MQTT_KEEPALIVE_S);
+  if (!mqttClient.setBufferSize(MQTT_BUFFER_SIZE))
+  {
+    LOG_ERROR("Could not allocate the MQTT buffer");
+  }
 
-  mqttClient.setCredentials(MQTT_USER, MQTT_PW);
-
-  // Connect to wifi and subsequently to mqtt broker
+  // Connect to wifi; loop() connects to the broker once Wi-Fi is up
   connectToWifi();
 
   // Configure controller
-  controller.set_heating_curve_slope(IVT490_HEATING_CURVE_SLOPE);
   controller.set_indoor_temperature_target(20.0);
   controller.set_indoor_temperature_weight(IVT490_INDOOR_TEMPERATURE_FEEDBACK_CONTROL_WEIGHT);
   controller.set_summer_temperature_limit(IVT490_SUMMER_TEMPERATURE_LIMIT);
@@ -229,26 +401,31 @@ void setup()
   // Read ADCs continuously
   app.onRepeat(IVT490_ADC_SAMPLING_INTERVAL, []()
                {
-                 LOG_DEBUG("Reading ADCs...");
-                 auto value = GT2_reader.read();
-                 LOG_DEBUG("    GT2_sensor: ", value);
-                 auto filtered_value = filter(value);
-                 LOG_DEBUG("    GT2_sensor (filtered): ", filtered_value);
-                 vp_state.GT2_sensor = filtered_value;
-                 controller.set_outdoor_temperature(filtered_value); });
+                // Read into app_state
+                 GT2_reader.read(app_state.ivt490.GT2);
+                 GT3_2_reader.read(app_state.ivt490.GT3_2);
+                });
+
 
   // Run control code
   app.onRepeat(IVT490_CONTROL_INTERVAL, []()
                {
                  LOG_DEBUG("Running control code...");
 
-                auto [control_value, vacation_mode] = controller.get_control_values();
+                 auto control_values = controller.get_control_values(app_state.ivt490);
 
-                 // Set the control value
-                 GT2_emulator.set_target_value(control_value);
+                 // Control feed temperature
+                 GT2_emulator.set_target_value(control_values.GT2);
 
                  // Make sure EXT_IN relay is in correct position
-                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, vacation_mode); });
+                 digitalWrite(IVT490_EXT_IN_RELAY_PIN, control_values.enable_vacation_mode);
+
+                 // Control boiler (GT3_2 emulator)
+                  GT3_2_emulator.set_target_value(control_values.GT3_2);
+ });
+
+  // Board diagnostics
+  app.onRepeat(DIAGNOSTICS_PUBLISH_INTERVAL, publish_diagnostics);
 
   // Serial listener to IVT490
   app.onAvailable(ivtSerial, []()
@@ -257,13 +434,11 @@ void setup()
                     LOG_INFO("Received serial data from IVT490:", raw);
 
                     LOG_INFO("Publishing raw output to MQTT broker...");
-                    mqttClient.publish(
-                        (MQTT_BASE_TOPIC + String("/state/raw")).c_str(),
-                        0,
-                        false,
-                        raw.c_str());
+                    char raw_topic[160];
+                    snprintf(raw_topic, sizeof(raw_topic), "%s/ivt490/raw", base_topic);
+                    mqtt_publish(raw_topic, raw.c_str());
 
-                    if (parse_IVT490(raw, vp_state) < 0)
+                    if (parse_serial(raw, app_state.ivt490.serial) < 0)
                     {
                       LOG_ERROR("Failed parsing serial message from IVT490!");
                       return;
@@ -276,24 +451,31 @@ void setup()
                       LOG_INFO("Serial connection to IVT490 initialized correctly, enabling state publishing");
                       app.onRepeat(GENERAL_STATE_PUBLISH_INTERVAL, []
                                   {
+                                      if (!mqttClient.connected())
+                                      {
+                                        return;
+                                      }
+
                                       LOG_INFO("Publishing to MQTT broker...");
+                                      char topic[160];
 
                                       // IVT490 state
-                                      auto doc = IVT490::serialize_IVT490State(vp_state);
-                                      auto topic = MQTT_BASE_TOPIC + String("/state");
-                                      publish_json_object(topic, doc);
+                                      auto doc = app_state.ivt490.serialize();
+                                      snprintf(topic, sizeof(topic), "%s/ivt490/state", base_topic);
+                                      publish_json_object(topic, sizeof(topic), doc.as<JsonObject>());
 
                                       doc.clear();
 
                                       // Controller state
                                       doc = controller.serialize();
-                                      topic = MQTT_BASE_TOPIC + String("/controller/state");
-                                      publish_json_object(topic, doc);
+                                      snprintf(topic, sizeof(topic), "%s/controller/state", base_topic);
+                                      publish_json_object(topic, sizeof(topic), doc.as<JsonObject>());
                                       });
                     }
 
                     LOG_INFO("Adjusting thermistor emulator corrections");
-                    GT2_emulator.adjust_correction(vp_state.GT2_heatpump); });
+                    GT2_emulator.adjust_correction(app_state.ivt490.serial.GT2);
+                    GT3_2_emulator.adjust_correction(app_state.ivt490.serial.GT3_2); });
 
   // Configure OTA
   ArduinoOTA.setHostname(OTA_HOSTNAME);
@@ -304,13 +486,49 @@ void setup()
   app.onTick([]()
              { ArduinoOTA.handle(); });
 
-  // Reset once a day to avoid mysterious fails...
-  app.onDelay(24 * 3600 * 1000, ESP.restart);
-
   LOG_INFO("Setup complete, waiting for serial connection to IVT490 to initialize...");
+}
+
+// The MQTT connection and both restarts live here rather than in ReactESP
+// callbacks. On 2026-10-31 the board dropped off the network for 17.7 h and
+// its scheduled daily restart never fired; these checks need nothing but
+// loop() running and millis().
+void maintain_connectivity()
+{
+  uint32_t now = millis();
+
+  if (WiFi.isConnected())
+  {
+    if (mqttClient.connected())
+    {
+      mqttClient.loop();
+    }
+    else if (last_mqtt_attempt == 0 || now - last_mqtt_attempt >= MQTT_RECONNECT_INTERVAL)
+    {
+      last_mqtt_attempt = now;
+      connectToMqtt();
+    }
+  }
+
+  if (WiFi.isConnected() && mqttClient.connected())
+  {
+    last_connected = now;
+  }
+  else if (now - last_connected >= CONNECTIVITY_WATCHDOG_TIMEOUT)
+  {
+    LOG_ERROR("Wi-Fi or MQTT down beyond the watchdog timeout, restarting");
+    ESP.restart();
+  }
+
+  // Reset once a day to avoid mysterious fails...
+  if (now >= DAILY_RESTART_INTERVAL)
+  {
+    ESP.restart();
+  }
 }
 
 void loop()
 {
+  maintain_connectivity();
   app.tick();
 }

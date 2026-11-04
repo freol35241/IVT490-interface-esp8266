@@ -1,0 +1,75 @@
+name: PlatformIO CI
+
+on:
+  push:
+    branches: [ main, GT3_2_boiler_emulation ]
+  pull_request:
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Dummy config.h
+      run: |
+        cat > include/config.h <<'EOF'
+        #ifndef CONFIG_H
+        #define CONFIG_H
+
+        #define GENERAL_CONTROL_VALUES_VALIDITY 360 * 1000
+        #define GENERAL_STATE_PUBLISH_INTERVAL 10000
+
+        #define WIFI_SSID "DUMMY"
+        #define WIFI_PW "DUMMY"
+
+        #define OTA_HOSTNAME "DUMMY"
+
+        #define MQTT_HOST IPAddress(10, 10, 10, 10)
+        #define MQTT_PORT 10
+        #define MQTT_USER "DUMMY"
+        #define MQTT_PW "DUMMY"
+        #define MQTT_BASE_TOPIC String("DUMMY/DUMMY")
+
+        #define IVT490_SERIAL_RX 5
+        #define IVT490_HEATING_CURVE_SLOPE 3.0
+        #define IVT490_ADC_CS 15
+        #define IVT490_ADC_CH0_R0 10000
+        #define IVT490_ADC_CH1_R0 10000
+        #define IVT490_ADC_SAMPLING_INTERVAL 1000
+        #define IVT490_DIGIPOT_GT2_CS 2
+        #define IVT490_DIGIPOT_GT2_RESOLUTION 8
+        #define IVT490_DIGIPOT_GT2_MAX_RESISTANCE 100000
+        #define IVT490_DIGIPOT_GT32_CS 4
+        #define IVT490_DIGIPOT_GT32_RESOLUTION 8
+        #define IVT490_DIGIPOT_GT32_MAX_RESISTANCE 10000
+        #define IVT490_CONTROL_INTERVAL 1000
+        #define IVT490_EXT_IN_RELAY_PIN 0
+        #define IVT490_INDOOR_TEMPERATURE_FEEDBACK_CONTROL_WEIGHT 10
+        #define IVT490_SUMMER_TEMPERATURE_LIMIT 14.0
+
+        #endif
+        EOF
+    - name: Cache pip
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    - name: Cache PlatformIO
+      uses: actions/cache@v4
+      with:
+        path: ~/.platformio
+        key: ${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install PlatformIO
+      run: |
+        python -m pip install --upgrade pip
+        pip install --upgrade platformio
+    - name: Run PlatformIO
+      run: pio run --environment d1_mini_lite
