@@ -276,6 +276,44 @@ void onMqttMessage(char *topic, byte *payload_bytes, unsigned int length)
 // fresh heap allocation every publish interval.
 char json_buffer[MQTT_BUFFER_SIZE];
 
+// One document for both state publishes, which run one after the other.
+// Static for the same reason: it replaces a 4096- and a 1024-byte heap
+// allocation every GENERAL_STATE_PUBLISH_INTERVAL. Sized from the members
+// the serializers write, with headroom; a fill that overflows is skipped and
+// counted in oversize_skips rather than published short.
+constexpr size_t STATE_DOC_CAPACITY =
+    2 * JSON_OBJECT_SIZE(IVT490::State::STATE_DOC_SLOTS > Controller::STATE_DOC_SLOTS
+                             ? IVT490::State::STATE_DOC_SLOTS
+                             : Controller::STATE_DOC_SLOTS);
+StaticJsonDocument<STATE_DOC_CAPACITY> state_doc;
+size_t state_doc_peak = 0; // largest memoryUsage() seen, for diagnostics
+
+void publish_json_object(char *topic, size_t capacity, const JsonObject root);
+
+void publish_state_doc(char *topic, size_t capacity)
+{
+  state_doc_peak = max(state_doc_peak, state_doc.memoryUsage());
+  if (state_doc.overflowed())
+  {
+    oversize_skips++;
+    LOG_ERROR("State document overflowed, skipped: ", topic);
+    return;
+  }
+  publish_json_object(topic, capacity, state_doc.as<JsonObject>());
+}
+
+// One IVT490 sentence, gathered without blocking. A line that does not fit is
+// dropped whole (counted in serial_overflows) rather than parsed in pieces.
+// readStringUntil() built a String per line and blocked up to its 1 s
+// timeout, returning a fragment if the line arrived slower than that.
+#ifndef SERIAL_LINE_BUFFER_SIZE
+#define SERIAL_LINE_BUFFER_SIZE 512
+#endif
+char serial_line[SERIAL_LINE_BUFFER_SIZE];
+size_t serial_line_len = 0;
+bool serial_line_overflowed = false;
+uint32_t serial_overflows = 0;
+
 // Publish `root` as one JSON blob on `topic`, then each leaf on its own
 // subtopic, recursing into nested objects (which also get their own blob).
 // The topic tree and the payload text are unchanged from the String-based
@@ -364,6 +402,8 @@ void publish_diagnostics()
       {"mqtt_connects", mqtt_connects},
       {"publish_failures", publish_failures},
       {"oversize_skips", oversize_skips},
+      {"serial_overflows", serial_overflows},
+      {"state_doc_peak", state_doc_peak},
   };
   for (auto &n : numbers)
   {
@@ -451,13 +491,44 @@ void setup()
   // Serial listener to IVT490
   app.onAvailable(ivtSerial, []()
                   {
-                    auto raw = ivtSerial.readStringUntil('\n');
+                    bool complete = false;
+                    while (ivtSerial.available() > 0)
+                    {
+                      char c = ivtSerial.read();
+                      if (c == '\n')
+                      {
+                        complete = true;
+                        break;
+                      }
+                      if (serial_line_len < sizeof(serial_line) - 1)
+                      {
+                        serial_line[serial_line_len++] = c;
+                      }
+                      else
+                      {
+                        serial_line_overflowed = true;
+                      }
+                    }
+                    if (!complete)
+                    {
+                      return;
+                    }
+                    serial_line[serial_line_len] = '\0';
+                    serial_line_len = 0;
+                    if (serial_line_overflowed)
+                    {
+                      serial_line_overflowed = false;
+                      serial_overflows++;
+                      LOG_ERROR("Serial line from IVT490 longer than its buffer, dropped");
+                      return;
+                    }
+                    const char *raw = serial_line;
                     LOG_INFO("Received serial data from IVT490:", raw);
 
                     LOG_INFO("Publishing raw output to MQTT broker...");
                     char raw_topic[160];
                     snprintf(raw_topic, sizeof(raw_topic), "%s/ivt490/raw", base_topic);
-                    mqtt_publish(raw_topic, raw.c_str());
+                    mqtt_publish(raw_topic, raw);
 
                     if (parse_serial(raw, app_state.ivt490.serial) < 0)
                     {
@@ -481,16 +552,14 @@ void setup()
                                       char topic[160];
 
                                       // IVT490 state
-                                      auto doc = app_state.ivt490.serialize();
+                                      app_state.ivt490.serialize(state_doc);
                                       snprintf(topic, sizeof(topic), "%s/ivt490/state", base_topic);
-                                      publish_json_object(topic, sizeof(topic), doc.as<JsonObject>());
-
-                                      doc.clear();
+                                      publish_state_doc(topic, sizeof(topic));
 
                                       // Controller state
-                                      doc = controller.serialize();
+                                      controller.serialize(state_doc);
                                       snprintf(topic, sizeof(topic), "%s/controller/state", base_topic);
-                                      publish_json_object(topic, sizeof(topic), doc.as<JsonObject>());
+                                      publish_state_doc(topic, sizeof(topic));
                                       });
                     }
 

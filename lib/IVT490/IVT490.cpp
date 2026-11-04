@@ -76,74 +76,73 @@ namespace IVT490
         return -multiMap<float>(temperature, NTC_temperatures, NTC_resistances, NTC_number_of_values);
     }
 
-    int parse_serial(String raw, State::Serial &serial)
+    // Fields are read in place, by pointer, so a sentence costs no heap.
+    // atof/atol stop at the ';' that ends a field, which makes them give
+    // exactly what String::toFloat/toInt (atof/atol) gave on the copied
+    // substring. Accepted input is unchanged too: at least 36 separators.
+    int parse_serial(const char *raw, State::Serial &serial)
     {
-        String split[IVT490_NO_OF_ITEMS_IN_SENTENCE];
-
-        // Splitting raw string
-        auto remainder = raw;
+        const char *field[IVT490_NO_OF_ITEMS_IN_SENTENCE];
+        const char *p = raw;
 
         for (int item = 0; item < IVT490_NO_OF_ITEMS_IN_SENTENCE; item++)
         {
-            auto ix = remainder.indexOf(';');
-
-            if (ix == -1)
+            field[item] = p;
+            if (item == IVT490_NO_OF_ITEMS_IN_SENTENCE - 1)
             {
-                if (item == IVT490_NO_OF_ITEMS_IN_SENTENCE - 1)
-                {
-                    split[item] = remainder;
-                    break;
-                }
-                else
-                {
-                    LOG_ERROR("Received raw string did not have correct length (37)!");
-                    return -1;
-                }
+                break;
             }
 
-            split[item] = remainder.substring(0, ix);
-
-            remainder = remainder.substring(ix + 1);
+            const char *sep = strchr(p, ';');
+            if (sep == nullptr)
+            {
+                LOG_ERROR("Received raw string did not have correct length (37)!");
+                return -1;
+            }
+            p = sep + 1;
         }
 
-        // Parsing and interpreting each substring
-        serial.GT1 = 0.1 * split[1].toFloat();
-        serial.GT2 = 0.1 * split[2].toFloat();
-        serial.GT3_1 = 0.1 * split[3].toFloat();
-        serial.GT3_2 = 0.1 * split[4].toFloat();
-        serial.GT3_3 = 0.1 * split[5].toFloat();
-        serial.GT5 = 0.1 * split[6].toFloat();
-        serial.GT6 = 0.1 * split[7].toFloat();
-        serial.GT3_4 = 0.1 * split[8].toFloat();
-        serial.GP3 = (bool)split[9].toInt();
-        serial.GP2 = (bool)split[10].toInt();
-        serial.GP1 = (bool)split[11].toInt();
-        serial.vacation = (bool)split[12].toInt();
-        serial.compressor = (bool)split[13].toInt();
-        serial.SV1_open = (bool)split[14].toInt();
-        serial.SV1_close = (bool)split[15].toInt();
-        serial.P1 = (bool)split[16].toInt();
-        serial.fan = (bool)split[17].toInt();
-        serial.alarm = (bool)split[18].toInt();
-        serial.P2 = (bool)split[19].toInt();
-        serial.GT1_LLT = 0.1 * split[20].toFloat();
-        serial.GT1_LL = 0.1 * split[21].toFloat();
-        serial.GT1_target = 0.1 * split[22].toFloat();
-        serial.GT1_UL = 0.1 * split[23].toFloat();
-        serial.GT3_2_LL = 0.1 * split[24].toFloat();
-        serial.GT3_2_ULT = 0.1 * split[25].toFloat();
-        serial.GT3_2_UL = 0.1 * split[26].toFloat();
-        serial.GT3_3_LL = 0.1 * split[27].toFloat();
-        serial.GT3_3_target = 0.1 * split[28].toFloat();
-        serial.electricity_supplement = 0.1 * split[33].toFloat();
+        auto f = [&field](int i) { return (float)atof(field[i]); };
+        auto b = [&field](int i) { return (bool)atol(field[i]); };
+
+        // Parsing and interpreting each field
+        serial.GT1 = 0.1 * f(1);
+        serial.GT2 = 0.1 * f(2);
+        serial.GT3_1 = 0.1 * f(3);
+        serial.GT3_2 = 0.1 * f(4);
+        serial.GT3_3 = 0.1 * f(5);
+        serial.GT5 = 0.1 * f(6);
+        serial.GT6 = 0.1 * f(7);
+        serial.GT3_4 = 0.1 * f(8);
+        serial.GP3 = b(9);
+        serial.GP2 = b(10);
+        serial.GP1 = b(11);
+        serial.vacation = b(12);
+        serial.compressor = b(13);
+        serial.SV1_open = b(14);
+        serial.SV1_close = b(15);
+        serial.P1 = b(16);
+        serial.fan = b(17);
+        serial.alarm = b(18);
+        serial.P2 = b(19);
+        serial.GT1_LLT = 0.1 * f(20);
+        serial.GT1_LL = 0.1 * f(21);
+        serial.GT1_target = 0.1 * f(22);
+        serial.GT1_UL = 0.1 * f(23);
+        serial.GT3_2_LL = 0.1 * f(24);
+        serial.GT3_2_ULT = 0.1 * f(25);
+        serial.GT3_2_UL = 0.1 * f(26);
+        serial.GT3_3_LL = 0.1 * f(27);
+        serial.GT3_3_target = 0.1 * f(28);
+        serial.electricity_supplement = 0.1 * f(33);
 
         return 0;
     }
 
-    DynamicJsonDocument State::serialize() const
+    void State::serialize(JsonDocument &doc) const
     {
         LOG_INFO("Serializing IVT490::State");
-        DynamicJsonDocument doc(4096);
+        doc.clear();
 
         auto serial = this->serial;
 
@@ -183,8 +182,6 @@ namespace IVT490
 
         doc["GT3_2"]["raw"] = this->GT3_2.raw;
         doc["GT3_2"]["filtered"] = this->GT3_2.filtered;
-
-        return doc;
     }
 
 }

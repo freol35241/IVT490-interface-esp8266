@@ -56,11 +56,18 @@ namespace IVT490
         Sensor GT2;
         Sensor GT3_2;
 
-        DynamicJsonDocument serialize() const;
+        // Fills `doc` (cleared first). Keys are literals, which ArduinoJson
+        // stores by pointer, so the document holds slots only: see
+        // STATE_DOC_SLOTS.
+        void serialize(JsonDocument &doc) const;
+
+        // Object members serialize() writes: the root's 3, serial's 28 and
+        // the two sensors' 2 each.
+        static constexpr size_t STATE_DOC_SLOTS = 3 + 28 + 2 + 2;
 
     };
 
-    int parse_serial(String raw, State::Serial &serial);
+    int parse_serial(const char *raw, State::Serial &serial);
 
     float NTC_interpolate_temperature(float resistance);
     float NTC_interpolate_resistance(float temperature);
