@@ -38,7 +38,9 @@ BOM:
 Schematic:
 ![](circuit.svg)
 
-Note: The MCP41100 Vdd pin is connected to 5V in order to allow the 5V connection from the IVT490 ADC. According to the [datasheet](https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/ProductDocuments/DataSheets/11195c.pdf) this should render the 3.3V logic level of the Wemos D1 mini useless but nonetheless, it works...
+Both sensors are wired the same way. The real sensor sits between 3v3 and an MCP3208 channel, with a 10 kOhm resistor to ground (`IVT490_ADC_CH{0,1}_R0`): GT2 on CH0, GT3:2 on CH1. A digipot in rheostat mode (PB0-PW0) replaces it towards the heat pump: the MCP41100 for GT2 on CS D4, the MCP41010 for GT3:2 on CS D2. Both digipots and the ADC share the SPI bus (SCK D5, SI/DIN D7, DOUT D6); the ADC's CS is D8, the serial line from the heat pump comes in on D1 and the relay is on D3.
+
+Note: The MCP41100 Vdd pin is connected to 5V in order to allow the 5V connection from the IVT490 ADC. According to the [datasheet](https://ww1.microchip.com/downloads/aemDocuments/documents/OTH/ProductDocuments/DataSheets/11195c.pdf) this should render the 3.3V logic level of the Wemos D1 mini useless but nonetheless, it works... The schematic draws the MCP41010 the same way.
 
 ## Software
 
