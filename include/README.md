@@ -14,7 +14,7 @@ More specifically, this project requires a header file named `config.h` to be pl
 #define WIFI_PW "YOUR WIFI PASSWORD"
 
 #define OTA_HOSTNAME "esp8266-ivt490"
-// #define OTA_PASSWORD "YOUR-PASSWORD"
+#define OTA_PASSWORD "YOUR-PASSWORD" // required: guards both firmware update paths
 
 #define MQTT_HOST IPAddress(1, 1, 1, 1)
 #define MQTT_PORT 1883

@@ -2,6 +2,8 @@
 
 #include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPUpdateServer.h>
 #include <Ticker.h>
 #include <ReactESP.h>
 #include <PubSubClient.h>
@@ -11,6 +13,22 @@
 
 #include "IVT490.h"
 #include "Controller.h"
+
+// Firmware updates. Both paths below write a new image, and both take this
+// password; there is deliberately no way to build without one.
+//
+// ArduinoOTA (espota) has the board connect BACK to the uploading host, which
+// a firewall between the board's network and the host's blocks. The HTTP
+// update server is host-initiated, so it works wherever the board's port 80
+// is reachable:
+//   curl -u "admin:$OTA_PASSWORD" -F "firmware=@.pio/build/d1_mini_lite/firmware.bin" \
+//        http://<board>/update
+#ifndef OTA_PASSWORD
+#error "Define OTA_PASSWORD in config.h: it guards both update paths"
+#endif
+#ifndef OTA_USERNAME
+#define OTA_USERNAME "admin"
+#endif
 
 // MQTT robustness settings. Each can be overridden in config.h.
 //
@@ -45,6 +63,9 @@ reactesp::ReactESP app;
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
+
+ESP8266WebServer httpServer(80);
+ESP8266HTTPUpdateServer httpUpdater;
 
 WiFiEventHandler wifiConnectHandler;
 WiFiEventHandler wifiDisconnectHandler;
@@ -479,12 +500,14 @@ void setup()
 
   // Configure OTA
   ArduinoOTA.setHostname(OTA_HOSTNAME);
-#ifdef OTA_PASSWORD
   ArduinoOTA.setPassword(OTA_PASSWORD);
-#endif
   ArduinoOTA.begin();
+  httpUpdater.setup(&httpServer, "/update", OTA_USERNAME, OTA_PASSWORD);
+  httpServer.begin();
   app.onTick([]()
-             { ArduinoOTA.handle(); });
+             {
+               ArduinoOTA.handle();
+               httpServer.handleClient(); });
 
   LOG_INFO("Setup complete, waiting for serial connection to IVT490 to initialize...");
 }
