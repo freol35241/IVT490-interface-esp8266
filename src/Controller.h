@@ -166,9 +166,14 @@ public:
     }
 
 
-    DynamicJsonDocument serialize()
+    // Object members serialize() writes: 5 at the root, 2 in each of the
+    // three value/valid pairs and 1 in indoor_temperature_target.
+    static constexpr size_t STATE_DOC_SLOTS = 5 + 3 * 2 + 1;
+
+    // Fills `doc` (cleared first).
+    void serialize(JsonDocument &doc)
     {
-        DynamicJsonDocument doc(1024);
+        doc.clear();
 
         doc["feed_temperature_target"]["value"] = this->feed_temperature_target;
         doc["feed_temperature_target"]["valid"] = this->feed_temperature_target_is_valid();
@@ -182,8 +187,6 @@ public:
         doc["indoor_temperature_target"]["value"] = this->indoor_temperature_target;
 
         doc["operating_mode"] = this->operating_mode;
-
-        return doc;
     }
 
 private:
